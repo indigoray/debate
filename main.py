@@ -37,11 +37,11 @@ def main():
     # 로거 설정
     logger = setup_logger(config['logging'])
     
-    # OpenAI API 키 확인
-    api_key = os.getenv('OPENAI_API_KEY')
+    # OpenAI API 키 확인 (config.yaml 우선, 환경변수 차선)
+    api_key = config.get('ai', {}).get('api_key') or os.getenv('OPENAI_API_KEY')
     if not api_key:
-        print(f"{Fore.RED}Error: OPENAI_API_KEY 환경변수가 설정되지 않았습니다.{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}Tip: .env 파일을 생성하고 API 키를 설정하세요.{Style.RESET_ALL}")
+        print(f"{Fore.RED}Error: OpenAI API 키가 설정되지 않았습니다.{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}Tip: config.yaml의 ai.api_key 또는 .env의 OPENAI_API_KEY를 설정하세요.{Style.RESET_ALL}")
         sys.exit(1)
     
     print(f"{Fore.CYAN}{'='*60}")

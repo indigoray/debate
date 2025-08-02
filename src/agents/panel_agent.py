@@ -22,9 +22,9 @@ class PanelAgent:
         
         Args:
             name: 전문가 이름
-            expertise: 전문 분야
-            background: 배경 및 경력
-            perspective: 주제에 대한 관점
+            expertise: 직업/소속
+            background: 배경/서사
+            perspective: 핵심 관점 및 논리
             config: 설정 딕셔너리
             api_key: OpenAI API 키
         """

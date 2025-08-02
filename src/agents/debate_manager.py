@@ -123,12 +123,9 @@ class DebateManager:
 
 ## 생성 형식 (아래 형식을 반드시 준수해주세요)
 1.  **전문가 이름**: [이름]
-    **직업/소속**: [구체적인 직업과 소속]
-    **핵심 주장**: [토론 주제에 대한 한 문장 요약 주장 (예: "뇌 구조의 차이가 역할 분담의 핵심 근거다")]
-    **페르소나**:
-    *   **배경/서사**: [그의 주장을 뒷받침하는 구체적인 개인적 경험, 연구 이력, 저서 등 (예: 20년간 성별 뇌 구조 차이를 연구해온 권위자. 저서 '남성의 뇌, 여성의 뇌'가 베스트셀러가 됨)]
-    *   **관점/논리**: [자신의 주장을 어떤 논리와 근거(예: 특정 연구, 통계, 이론)로 펼쳐나갈 것인지 상세히 기술]
-    *   **언어 스타일**: [학술적, 비판적, 감성적, 관조적 등 구체적인 말투와 자주 사용하는 수사법 (예: "제 fMRI 연구 데이터에 따르면...", "그것은 전형적인 성급한 일반화의 오류입니다.")]
+    **전문분야**: [구체적인 직업과 소속]
+    **배경**: [그의 주장을 뒷받침하는 구체적인 개인적 경험, 연구 이력, 저서 등 (예: 20년간 성별 뇌 구조 차이를 연구해온 권위자. 저서 '남성의 뇌, 여성의 뇌'가 베스트셀러가 됨)]
+    **관점**: [토론 주제에 대한 핵심 주장과 그를 뒷받침하는 논리, 그리고 언어 스타일을 자연스럽게 서술 (예: "뇌 구조의 차이가 역할 분담의 핵심 근거라고 주장. fMRI 연구 데이터를 활용하며, '연구에 따르면...' 등 학술적이고 데이터 중심적인 말투를 사용한다.")]
 
 2.  **전문가 이름**: ... (반복)
 
@@ -153,6 +150,9 @@ class DebateManager:
             
             result = response.choices[0].message.content
             
+            # 디버깅을 위해 AI 응답 로그 출력
+            self.logger.info(f"AI 페르소나 생성 응답: {result}")
+            
             # 응답 파싱하여 전문가 정보 추출
             personas = self._parse_expert_personas(result)
             self.logger.info(f"{len(personas)}명의 전문가 페르소나 생성 완료")
@@ -161,75 +161,107 @@ class DebateManager:
             
         except Exception as e:
             self.logger.error(f"전문가 페르소나 생성 실패: {e}")
-            return self._get_default_personas()
+            self.logger.info("기본 페르소나를 사용합니다.")
+            default_personas = self._get_default_personas()
+            self.logger.info(f"기본 페르소나 {len(default_personas)}명 로드 완료")
+            return default_personas
     
     def _parse_expert_personas(self, response: str) -> List[Dict[str, str]]:
         """AI 응답에서 전문가 정보 파싱 (개선된 버전)"""
         personas = []
-        # 전문가별로 텍스트를 분리 (예: "1. 전문가 이름", "2. 전문가 이름")
-        expert_sections = response.strip().split('\n\n')
-
-        for section in expert_sections:
-            if not section.strip():
-                continue
-
-            lines = section.strip().split('\n')
+        
+        # 디버깅을 위한 로그
+        self.logger.info(f"파싱 시작. 응답 길이: {len(response)}")
+        
+        try:
+            # 다양한 형식에 대응하는 유연한 파싱
+            lines = response.split('\n')
             current_expert = {}
             
-            # 한 줄씩 순회하며 정보 추출
-            for line in lines:
+            for i, line in enumerate(lines):
                 line = line.strip()
-                if line.startswith('**전문가 이름**: '):
-                    current_expert['name'] = line.split(':', 1)[1].strip().replace(' ', '')
-                elif line.startswith('**직업/소속**: '):
-                    current_expert['expertise'] = line.split(':', 1)[1].strip()
-                elif line.startswith('**핵심 주장**: '):
-                    # 핵심 주장을 perspective의 시작으로 사용
-                    current_expert['perspective'] = f"핵심 주장: {line.split(':', 1)[1].strip()}"
-                elif line.startswith('*   **배경/서사**: '):
-                    current_expert['background'] = line.split(':', 1)[1].strip()
-                elif line.startswith('*   **관점/논리**: '):
-                    # perspective에 논리 추가
-                    current_expert['perspective'] += f"\n논리: {line.split(':', 1)[1].strip()}"
-                elif line.startswith('*   **언어 스타일**: '):
-                    # perspective에 언어 스타일 추가
-                    current_expert['perspective'] += f"\n언어 스타일: {line.split(':', 1)[1].strip()}"
-
-            if 'name' in current_expert:
-                # 필수 필드가 모두 채워졌는지 확인하고 기본값 설정
-                current_expert.setdefault('expertise', '분야 정보 없음')
-                current_expert.setdefault('background', '배경 정보 없음')
-                current_expert.setdefault('perspective', '관점 정보 없음')
+                
+                # 전문가 이름 찾기 (다양한 형식 지원)
+                if ('전문가 이름' in line and ':' in line) or ('**전문가 이름**' in line):
+                    # 이전 전문가 정보가 있으면 저장
+                    if current_expert and 'name' in current_expert:
+                        self._finalize_expert(current_expert)
+                        personas.append(current_expert)
+                    
+                    # 새 전문가 시작
+                    current_expert = {}
+                    name_part = line.split(':', 1)[-1].strip()
+                    name_part = name_part.replace('**', '').replace('[', '').replace(']', '').strip()
+                    current_expert['name'] = name_part.replace(' ', '')
+                
+                # 전문분야 정보
+                elif '전문분야' in line and ':' in line:
+                    expertise_part = line.split(':', 1)[-1].strip()
+                    expertise_part = expertise_part.replace('**', '').replace('[', '').replace(']', '').strip()
+                    current_expert['expertise'] = expertise_part
+                
+                # 배경
+                elif '배경' in line and ':' in line and '배경/서사' not in line:
+                    background_part = line.split(':', 1)[-1].strip()
+                    background_part = background_part.replace('**', '').replace('[', '').replace(']', '').strip()
+                    current_expert['background'] = background_part
+                
+                # 관점
+                elif '관점' in line and ':' in line and '핵심 관점' not in line:
+                    perspective_part = line.split(':', 1)[-1].strip()
+                    perspective_part = perspective_part.replace('**', '').replace('[', '').replace(']', '').strip()
+                    current_expert['perspective'] = perspective_part
+            
+            # 마지막 전문가 정보 저장
+            if current_expert and 'name' in current_expert:
+                self._finalize_expert(current_expert)
                 personas.append(current_expert)
-        
-        return personas[:self.panel_size]
+            
+            self.logger.info(f"파싱 완료. {len(personas)}명의 전문가 추출됨")
+            
+            # 최소한의 전문가가 없으면 기본 페르소나 사용
+            if len(personas) == 0:
+                self.logger.warning("파싱된 전문가가 없음. 기본 페르소나 사용")
+                return self._get_default_personas()
+            
+            return personas[:self.panel_size]
+            
+        except Exception as e:
+            self.logger.error(f"파싱 중 오류 발생: {e}")
+            return self._get_default_personas()
+    
+    def _finalize_expert(self, expert: Dict[str, str]) -> None:
+        """전문가 정보 최종 처리"""
+        expert.setdefault('expertise', '전문가')
+        expert.setdefault('background', '해당 분야의 경험이 풍부한 전문가')
+        expert.setdefault('perspective', '균형잡힌 관점으로 토론에 참여')
     
     def _get_default_personas(self) -> List[Dict[str, str]]:
         """기본 전문가 페르소나"""
         return [
             {
-                "name": "김학술",
-                "expertise": "사회과학",
-                "background": "서울대학교 사회학과 교수, 20년 경력",
-                "perspective": "사회구조적 관점에서 접근"
+                "name": "김철수",
+                "expertise": "신경과학자, 서울대 의대 교수",
+                "background": "15년간 성별 뇌 구조 차이 연구, 국제학술지 100편 이상 발표, 저서 '남성의 뇌, 여성의 뇌' 베스트셀러",
+                "perspective": "남녀 뇌의 구조적 차이는 과학적 사실이며, 이는 교육 방식에 반영되어야 한다는 입장. fMRI, DTI 등 뇌영상 연구 데이터를 근거로 논증하며, '연구에 따르면...', '통계적으로 유의한...' 등 학술적이고 데이터 중심적인 말투를 사용한다."
             },
             {
-                "name": "이실무",
-                "expertise": "경영학",
-                "background": "대기업 CEO 출신, 현재 경영컨설턴트",
-                "perspective": "실무적, 경제적 관점에서 접근"
+                "name": "박미영",
+                "expertise": "교육심리학자, 이화여대 교육학과 교수",
+                "background": "20년간 성별 교육 격차 연구, UNESCO 교육 평등 자문위원, 여성 교육 정책 전문가",
+                "perspective": "성별 차이보다 개인차가 크며, 성별 분리 교육은 고정관념을 강화한다고 주장. 교육현장 데이터와 국제비교연구를 통해 반박하며, '제가 만난 학생들을 보면...' 등 현장 사례를 자주 인용하는 따뜻하지만 논리적인 말투를 구사한다."
             },
             {
-                "name": "박연구",
-                "expertise": "기술공학",
-                "background": "KAIST 교수, IT 기업 CTO 경력",
-                "perspective": "기술적, 혁신적 관점에서 접근"
+                "name": "이준호",
+                "expertise": "진화심리학자, 연세대 심리학과 교수",
+                "background": "진화적 관점에서 성별 차이 연구 10년, 하버드 방문연구원 경력, 다수의 국제 공동연구 참여",
+                "perspective": "진화적 관점에서 성별 차이는 적응적 의미가 있으며, 교육에서도 고려되어야 한다고 본다. 진화심리학 이론과 문화간 비교연구를 활용하며, '인류 진화사를 보면...', '생존과 번식의 관점에서...' 등 철학적이고 거시적인 표현을 자주 사용한다."
             },
             {
-                "name": "최시민",
-                "expertise": "시민사회학",
-                "background": "NGO 활동가, 시민단체 대표",
-                "perspective": "시민사회, 인권적 관점에서 접근"
+                "name": "최소연",
+                "expertise": "젠더학자, 성공회대 민주자유전공 교수",
+                "background": "젠더 이론과 교육 불평등 연구 12년, 시민단체 활동 경력, 성평등 정책 자문",
+                "perspective": "생물학적 결정론은 위험하며, 성별 분리 교육은 사회적 차별을 재생산한다는 관점. 젠더 이론과 사회구조적 분석, 역사적 사례를 활용하며, '그것은 전형적인 생물학적 환원주의입니다', '우리는 질문해야 합니다' 등 비판적이고 열정적인 어조를 사용한다."
             }
         ]
     

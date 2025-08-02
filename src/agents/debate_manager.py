@@ -88,42 +88,51 @@ class DebateManager:
 {base_prompt}
 
 ## 역할과 책임
-1. 토론 주제를 분석하고 적절한 전문가 패널을 구성하세요.
-2. 토론 방식과 규칙을 명확히 안내하세요.
-3. 각 패널에게 공평한 발언 기회를 제공하세요.
-4. 토론이 건설적으로 진행되도록 조율하세요.
-5. 토론 종료 시 각 패널의 의견을 요약하고 결론을 제시하세요.
+1.  **토론 설계자**: 주제를 분석하여 가장 치열하고 흥미로운 토론이 될 수 있도록, 대립각이 명확한 전문가 패널을 구성하세요.
+2.  **적극적 중재자**: 단순히 발언 기회를 주는 것을 넘어, 토론이 교착 상태에 빠지거나 논점이 흐려질 때 핵심을 찌르는 질문을 던져 논의를 심화시키세요.
+3.  **논쟁 유도자**: 패널 간의 단순 의견 교환을 넘어, "방금 A패널의 주장에 대해 B패널께서는 어떻게 생각하십니까?" 와 같이 직접적인 반론과 재반론이 오가도록 적극적으로 유도하세요.
+4.  **압박 질문**: 중립성을 유지하면서도, "그 주장의 구체적인 근거는 무엇입니까?", "그 관점의 잠재적 맹점은 없습니까?" 와 같이 패널들이 자신의 논리를 명확히 방어하도록 압박 질문을 사용할 수 있습니다.
+5.  **종합 정리자**: 토론 종료 시, 각 패널의 최종 의견을 듣고, 단순 요약을 넘어 합의점, 대립점, 그리고 남은 과제까지 종합적으로 정리하여 제시하세요.
 
 ## 토론 진행 방식
-- 패널토론 방식으로 진행
-- 각 패널은 순차적으로 발언
-- 상호 토론과 반박 허용
-- 약 {self.duration_minutes}분간 진행
+- **1단계 (초기 의견 발표)**: 각 패널이 자신의 핵심 주장을 제시합니다.
+- **2단계 (지정 반론 및 상호 토론)**: 진행자가 특정 패널을 지목해 반론을 유도하고, 이어서 자유로운 상호 토론을 진행합니다. (라운드 방식)
+- **3단계 (심화 토론)**: 쟁점을 좁혀 더 깊이 있는 논쟁을 진행합니다.
+- **4단계 (최종 의견 발표 및 정리)**: 각 패널의 최종 의견을 듣고, 진행자가 전체 토론을 종합적으로 결론 냅니다.
+- 토론 시간: 약 {self.duration_minutes}분
 
-응답할 때는 "[토론 진행자]"로 시작하세요.
+응답할 때는 항상 **[토론 진행자]** 로 시작하세요.
 """
         return system_prompt
     
     def create_expert_personas(self, topic: str) -> List[Dict[str, str]]:
         """주제에 맞는 전문가 페르소나 생성"""
         persona_prompt = f"""
-토론 주제: {topic}
+# 페르소나 생성 지시문
 
-이 주제에 대해 토론할 {self.panel_size}명의 전문가를 설계해주세요.
-각 전문가는 서로 다른 배경과 관점을 가져야 합니다.
+## 토론 주제
+{topic}
 
-다음 형식으로 응답해주세요:
-1. 전문가 이름: [이름]
-   전문분야: [분야]
-   배경: [경력 및 배경]
-   관점: [주제에 대한 기본 관점]
+## 미션
+당신은 최고의 토론 프로그램을 만드는 PD입니다. 위 토론 주제에 대해 가장 흥미롭고, 치열하며, 깊이 있는 토론을 만들어낼 수 있는 {self.panel_size}명의 입체적인 전문가 패널을 캐스팅해주세요.
 
-2. 전문가 이름: [이름]
-   전문분야: [분야]
-   배경: [경력 및 배경]
-   관점: [주제에 대한 기본 관점]
+## 패널 구성 원칙
+1.  **선명한 대립각**: 패널들은 단순히 다른 의견을 가진 것이 아니라, 세계관이나 신념 수준에서 뚜렷하게 대립해야 합니다. 찬성과 반대 입장을 명확히 나누고, 그 안에서도 결이 다른 관점을 제시해주세요.
+2.  **입체적 캐릭터**: 단순한 '전문가'가 아닌, 개인적인 신념, 독특한 경험, 개성적인 말투를 가진 한 명의 '인물'을 만들어주세요.
+3.  **예측 불가능성**: 모든 패널이 예측 가능한 결론("결국은 균형이 중요합니다")으로 쉽게 수렴하지 않도록, 자신의 주장을 끝까지 고수하거나, 예상치 못한 논리를 펼치는 캐릭터를 포함해주세요.
 
-(4명까지)
+## 생성 형식 (아래 형식을 반드시 준수해주세요)
+1.  **전문가 이름**: [이름]
+    **직업/소속**: [구체적인 직업과 소속]
+    **핵심 주장**: [토론 주제에 대한 한 문장 요약 주장 (예: "뇌 구조의 차이가 역할 분담의 핵심 근거다")]
+    **페르소나**:
+    *   **배경/서사**: [그의 주장을 뒷받침하는 구체적인 개인적 경험, 연구 이력, 저서 등 (예: 20년간 성별 뇌 구조 차이를 연구해온 권위자. 저서 '남성의 뇌, 여성의 뇌'가 베스트셀러가 됨)]
+    *   **관점/논리**: [자신의 주장을 어떤 논리와 근거(예: 특정 연구, 통계, 이론)로 펼쳐나갈 것인지 상세히 기술]
+    *   **언어 스타일**: [학술적, 비판적, 감성적, 관조적 등 구체적인 말투와 자주 사용하는 수사법 (예: "제 fMRI 연구 데이터에 따르면...", "그것은 전형적인 성급한 일반화의 오류입니다.")]
+
+2.  **전문가 이름**: ... (반복)
+
+(총 {self.panel_size}명)
 """
         
         try:
@@ -155,28 +164,43 @@ class DebateManager:
             return self._get_default_personas()
     
     def _parse_expert_personas(self, response: str) -> List[Dict[str, str]]:
-        """AI 응답에서 전문가 정보 파싱"""
+        """AI 응답에서 전문가 정보 파싱 (개선된 버전)"""
         personas = []
-        lines = response.split('\n')
-        
-        current_expert = {}
-        for line in lines:
-            line = line.strip()
-            if '전문가 이름:' in line:
-                if current_expert:
-                    personas.append(current_expert)
-                # 이름에서 공백 제거
-                name = line.split(':', 1)[1].strip().replace(' ', '')
-                current_expert = {'name': name}
-            elif '전문분야:' in line:
-                current_expert['expertise'] = line.split(':', 1)[1].strip()
-            elif '배경:' in line:
-                current_expert['background'] = line.split(':', 1)[1].strip()
-            elif '관점:' in line:
-                current_expert['perspective'] = line.split(':', 1)[1].strip()
-        
-        if current_expert:
-            personas.append(current_expert)
+        # 전문가별로 텍스트를 분리 (예: "1. 전문가 이름", "2. 전문가 이름")
+        expert_sections = response.strip().split('\n\n')
+
+        for section in expert_sections:
+            if not section.strip():
+                continue
+
+            lines = section.strip().split('\n')
+            current_expert = {}
+            
+            # 한 줄씩 순회하며 정보 추출
+            for line in lines:
+                line = line.strip()
+                if line.startswith('**전문가 이름**: '):
+                    current_expert['name'] = line.split(':', 1)[1].strip().replace(' ', '')
+                elif line.startswith('**직업/소속**: '):
+                    current_expert['expertise'] = line.split(':', 1)[1].strip()
+                elif line.startswith('**핵심 주장**: '):
+                    # 핵심 주장을 perspective의 시작으로 사용
+                    current_expert['perspective'] = f"핵심 주장: {line.split(':', 1)[1].strip()}"
+                elif line.startswith('*   **배경/서사**: '):
+                    current_expert['background'] = line.split(':', 1)[1].strip()
+                elif line.startswith('*   **관점/논리**: '):
+                    # perspective에 논리 추가
+                    current_expert['perspective'] += f"\n논리: {line.split(':', 1)[1].strip()}"
+                elif line.startswith('*   **언어 스타일**: '):
+                    # perspective에 언어 스타일 추가
+                    current_expert['perspective'] += f"\n언어 스타일: {line.split(':', 1)[1].strip()}"
+
+            if 'name' in current_expert:
+                # 필수 필드가 모두 채워졌는지 확인하고 기본값 설정
+                current_expert.setdefault('expertise', '분야 정보 없음')
+                current_expert.setdefault('background', '배경 정보 없음')
+                current_expert.setdefault('perspective', '관점 정보 없음')
+                personas.append(current_expert)
         
         return personas[:self.panel_size]
     

@@ -122,14 +122,19 @@ class DebateManager:
 2.  **입체적 캐릭터**: 단순한 '전문가'가 아닌, 개인적인 신념, 독특한 경험, 개성적인 말투를 가진 한 명의 '인물'을 만들어주세요.
 3.  **예측 불가능성**: 모든 패널이 예측 가능한 결론("결국은 균형이 중요합니다")으로 쉽게 수렴하지 않도록, 자신의 주장을 끝까지 고수하거나, 예상치 못한 논리를 펼치는 캐릭터를 포함해주세요.
 
-## 생성 형식 (아래 형식을 반드시 준수해주세요)
-1.  **전문가 이름**: [이름]
-    **전문분야**: [구체적인 직업과 소속]
-    **배경**: [그의 주장을 뒷받침하는 구체적인 개인적 경험, 연구 이력, 저서 등 (예: 20년간 성별 뇌 구조 차이를 연구해온 권위자. 저서 '남성의 뇌, 여성의 뇌'가 베스트셀러가 됨)]
-    **관점**: [토론 주제에 대한 핵심 주장과 그를 뒷받침하는 논리 (예: "뇌 구조의 차이가 역할 분담의 핵심 근거라고 주장. fMRI 연구 데이터를 활용하며, 과학적 증거를 중시")]
-    **토론스타일**: [구체적인 토론 방식과 언어 스타일 (예: "논리적이고 데이터 중심적. '연구에 따르면...', '객관적 수치로 보면...' 등의 표현을 자주 사용. 감정보다 사실에 기반한 차분한 어조")]
+## 🚨 중요: 관점과 토론스타일 구분 원칙
+- **관점**에는 주장, 입장, 논리만 포함하고 말투나 언어스타일은 절대 포함하지 마세요
+- **토론스타일**에는 말투, 언어패턴, 표현방식만 포함하고 주장내용은 절대 포함하지 마세요
+- 두 항목을 명확히 분리해서 작성하는 것이 핵심입니다
 
-2.  **전문가 이름**: ... (반복)
+## 생성 형식 (아래 형식을 반드시 준수해주세요)
+1.  전문가 이름: [이름]
+    전문분야: [구체적인 직업과 소속]
+    배경: [그의 주장을 뒷받침하는 구체적인 개인적 경험, 연구 이력, 저서 등 (예: 20년간 성별 뇌 구조 차이를 연구해온 권위자. 저서 '남성의 뇌, 여성의 뇌'가 베스트셀러가 됨)]
+    관점: [토론 주제에 대한 핵심 주장과 입장만 기술. 언어 스타일은 포함하지 말 것 (예: "뇌 구조의 차이가 역할 분담의 핵심 근거라고 주장. fMRI 연구 데이터를 활용하며, 과학적 증거를 중시")]
+    토론스타일: [말투와 언어 패턴만 기술. 주장 내용은 포함하지 말 것 (예: "논리적이고 데이터 중심적. '연구에 따르면...', '객관적 수치로 보면...' 등의 학술적 표현을 자주 사용. 감정보다 사실에 기반한 차분한 어조")]
+
+2.  전문가 이름: ... (반복)
 
 (총 {self.panel_size}명)
 """
@@ -184,7 +189,7 @@ class DebateManager:
                 line = line.strip()
                 
                 # 전문가 이름 찾기 (다양한 형식 지원)
-                if ('전문가 이름' in line and ':' in line) or ('**전문가 이름**' in line):
+                if ('전문가 이름' in line and ':' in line)
                     # 이전 전문가 정보가 있으면 저장
                     if current_expert and 'name' in current_expert:
                         self._finalize_expert(current_expert)
@@ -203,13 +208,13 @@ class DebateManager:
                     current_expert['expertise'] = expertise_part
                 
                 # 배경
-                elif '배경' in line and ':' in line and '배경/서사' not in line:
+                elif '배경' in line and ':' in line
                     background_part = line.split(':', 1)[-1].strip()
                     background_part = background_part.replace('**', '').replace('[', '').replace(']', '').strip()
                     current_expert['background'] = background_part
                 
                 # 관점
-                elif '관점' in line and ':' in line and '핵심 관점' not in line:
+                elif '관점' in line and ':' in line
                     perspective_part = line.split(':', 1)[-1].strip()
                     perspective_part = perspective_part.replace('**', '').replace('[', '').replace(']', '').strip()
                     current_expert['perspective'] = perspective_part

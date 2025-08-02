@@ -46,9 +46,7 @@ class PanelAgent:
             llm_config={
                 "config_list": [{
                     "model": config['ai']['model'],
-                    "api_key": api_key,
-                    "temperature": config['ai']['temperature'],
-                    "max_tokens": config['ai']['max_tokens']
+                    "api_key": api_key
                 }]
             },
             human_input_mode="NEVER",
@@ -94,12 +92,24 @@ class PanelAgent:
             생성된 응답
         """
         try:
-            response = self.agent.generate_reply(
-                messages=[{"content": prompt, "role": "user"}]
+            # AutoGen의 generate_reply 대신 직접 OpenAI API 호출
+            import openai
+            
+            client = openai.OpenAI(api_key=self.api_key)
+            
+            response = client.chat.completions.create(
+                model=self.config['ai']['model'],
+                messages=[
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=self.config['ai']['max_tokens'],
+                temperature=self.config['ai']['temperature']
             )
             
-            self.logger.debug(f"응답 생성: {response[:100]}...")
-            return response
+            result = response.choices[0].message.content
+            self.logger.debug(f"응답 생성: {result[:100]}...")
+            return result
             
         except Exception as e:
             self.logger.error(f"응답 생성 실패: {e}")

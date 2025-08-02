@@ -189,7 +189,7 @@ class DebateManager:
                 line = line.strip()
                 
                 # 전문가 이름 찾기 (다양한 형식 지원)
-                if ('전문가 이름' in line and ':' in line)
+                if '전문가 이름' in line and ':' in line:
                     # 이전 전문가 정보가 있으면 저장
                     if current_expert and 'name' in current_expert:
                         self._finalize_expert(current_expert)
@@ -208,13 +208,13 @@ class DebateManager:
                     current_expert['expertise'] = expertise_part
                 
                 # 배경
-                elif '배경' in line and ':' in line
+                elif '배경' in line and ':' in line:
                     background_part = line.split(':', 1)[-1].strip()
                     background_part = background_part.replace('**', '').replace('[', '').replace(']', '').strip()
                     current_expert['background'] = background_part
                 
                 # 관점
-                elif '관점' in line and ':' in line
+                elif '관점' in line and ':' in line:
                     perspective_part = line.split(':', 1)[-1].strip()
                     perspective_part = perspective_part.replace('**', '').replace('[', '').replace(']', '').strip()
                     current_expert['perspective'] = perspective_part

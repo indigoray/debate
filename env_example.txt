@@ -1,0 +1,11 @@
+# OpenAI API 설정
+# 다음 파일을 .env로 복사하고 실제 API 키로 변경하세요
+
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Debate 설정 (선택사항 - config.yaml에서 기본값 설정됨)
+# DEBATE_DURATION_MINUTES=10
+# MODEL_NAME=gpt-4-turbo-preview
+
+# 로깅 설정 (선택사항)
+# LOG_LEVEL=INFO

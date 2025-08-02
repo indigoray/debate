@@ -1,0 +1,26 @@
+# Debate Agents Configuration
+
+# 토론 설정
+debate:
+  duration_minutes: 10
+  max_turns_per_agent: 3
+  panel_size: 4
+
+# AI 모델 설정
+ai:
+  model: "gpt-4.1"
+  temperature: 0.7
+  max_tokens: 1500
+
+# 로깅 설정
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# 에이전트 설정
+agents:
+  debate_manager:
+    system_prompt: "당신은 전문적인 토론 진행자입니다. 균형잡힌 토론을 이끌어가세요."
+  
+  panel_agent:
+    base_prompt: "당신은 해당 분야의 전문가입니다. 자신의 전문성을 바탕으로 논리적이고 설득력 있는 의견을 제시하세요."

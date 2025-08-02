@@ -5,7 +5,8 @@ debate:
   duration_minutes: 10
   max_turns_per_agent: 3
   panel_size: 4
-
+ # 페르소나 생성 후 결과를 출력하고 토론 진행 여부를 묻기
+  show_personas_before_debate: true
 # AI 모델 설정
 ai:
   model: "gpt-4.1"

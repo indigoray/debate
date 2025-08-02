@@ -30,6 +30,7 @@ class DebateManager:
         self.duration_minutes = config['debate']['duration_minutes']
         self.max_turns = config['debate']['max_turns_per_agent']
         self.panel_size = config['debate']['panel_size']
+        self.show_personas_before_debate = config['debate'].get('show_personas_before_debate', True)
         
         # 패널 에이전트들
         self.panel_agents: List[PanelAgent] = []
@@ -125,7 +126,8 @@ class DebateManager:
 1.  **전문가 이름**: [이름]
     **전문분야**: [구체적인 직업과 소속]
     **배경**: [그의 주장을 뒷받침하는 구체적인 개인적 경험, 연구 이력, 저서 등 (예: 20년간 성별 뇌 구조 차이를 연구해온 권위자. 저서 '남성의 뇌, 여성의 뇌'가 베스트셀러가 됨)]
-    **관점**: [토론 주제에 대한 핵심 주장과 그를 뒷받침하는 논리, 그리고 언어 스타일을 자연스럽게 서술 (예: "뇌 구조의 차이가 역할 분담의 핵심 근거라고 주장. fMRI 연구 데이터를 활용하며, '연구에 따르면...' 등 학술적이고 데이터 중심적인 말투를 사용한다.")]
+    **관점**: [토론 주제에 대한 핵심 주장과 그를 뒷받침하는 논리 (예: "뇌 구조의 차이가 역할 분담의 핵심 근거라고 주장. fMRI 연구 데이터를 활용하며, 과학적 증거를 중시")]
+    **토론스타일**: [구체적인 토론 방식과 언어 스타일 (예: "논리적이고 데이터 중심적. '연구에 따르면...', '객관적 수치로 보면...' 등의 표현을 자주 사용. 감정보다 사실에 기반한 차분한 어조")]
 
 2.  **전문가 이름**: ... (반복)
 
@@ -211,6 +213,12 @@ class DebateManager:
                     perspective_part = line.split(':', 1)[-1].strip()
                     perspective_part = perspective_part.replace('**', '').replace('[', '').replace(']', '').strip()
                     current_expert['perspective'] = perspective_part
+                
+                # 토론 스타일
+                elif '토론스타일' in line and ':' in line:
+                    debate_style_part = line.split(':', 1)[-1].strip()
+                    debate_style_part = debate_style_part.replace('**', '').replace('[', '').replace(']', '').strip()
+                    current_expert['debate_style'] = debate_style_part
             
             # 마지막 전문가 정보 저장
             if current_expert and 'name' in current_expert:
@@ -235,6 +243,7 @@ class DebateManager:
         expert.setdefault('expertise', '전문가')
         expert.setdefault('background', '해당 분야의 경험이 풍부한 전문가')
         expert.setdefault('perspective', '균형잡힌 관점으로 토론에 참여')
+        expert.setdefault('debate_style', '논리적이고 차분한 어조로 근거를 바탕으로 의견을 제시하는 스타일')
     
     def _get_default_personas(self) -> List[Dict[str, str]]:
         """기본 전문가 페르소나"""
@@ -243,25 +252,29 @@ class DebateManager:
                 "name": "김철수",
                 "expertise": "신경과학자, 서울대 의대 교수",
                 "background": "15년간 성별 뇌 구조 차이 연구, 국제학술지 100편 이상 발표, 저서 '남성의 뇌, 여성의 뇌' 베스트셀러",
-                "perspective": "남녀 뇌의 구조적 차이는 과학적 사실이며, 이는 교육 방식에 반영되어야 한다는 입장. fMRI, DTI 등 뇌영상 연구 데이터를 근거로 논증하며, '연구에 따르면...', '통계적으로 유의한...' 등 학술적이고 데이터 중심적인 말투를 사용한다."
+                "perspective": "남녀 뇌의 구조적 차이는 과학적 사실이며, 이는 교육 방식에 반영되어야 한다는 입장. fMRI, DTI 등 뇌영상 연구 데이터를 근거로 논증한다.",
+                "debate_style": "논리적이고 데이터 중심적인 스타일. '연구에 따르면...', '통계적으로 유의한...' 등의 학술적 표현을 자주 사용하며, 차분하고 객관적인 어조로 과학적 근거를 제시한다."
             },
             {
                 "name": "박미영",
                 "expertise": "교육심리학자, 이화여대 교육학과 교수",
                 "background": "20년간 성별 교육 격차 연구, UNESCO 교육 평등 자문위원, 여성 교육 정책 전문가",
-                "perspective": "성별 차이보다 개인차가 크며, 성별 분리 교육은 고정관념을 강화한다고 주장. 교육현장 데이터와 국제비교연구를 통해 반박하며, '제가 만난 학생들을 보면...' 등 현장 사례를 자주 인용하는 따뜻하지만 논리적인 말투를 구사한다."
+                "perspective": "성별 차이보다 개인차가 크며, 성별 분리 교육은 고정관념을 강화한다고 주장. 교육현장 데이터와 국제비교연구를 통해 반박한다.",
+                "debate_style": "따뜻하면서도 논리적인 설득형 스타일. '제가 만난 학생들을 보면...', '실제 교육현장에서는...' 등 현장 사례를 자주 인용하며, 공감과 데이터를 함께 활용하는 균형잡힌 어조를 사용한다."
             },
             {
                 "name": "이준호",
                 "expertise": "진화심리학자, 연세대 심리학과 교수",
                 "background": "진화적 관점에서 성별 차이 연구 10년, 하버드 방문연구원 경력, 다수의 국제 공동연구 참여",
-                "perspective": "진화적 관점에서 성별 차이는 적응적 의미가 있으며, 교육에서도 고려되어야 한다고 본다. 진화심리학 이론과 문화간 비교연구를 활용하며, '인류 진화사를 보면...', '생존과 번식의 관점에서...' 등 철학적이고 거시적인 표현을 자주 사용한다."
+                "perspective": "진화적 관점에서 성별 차이는 적응적 의미가 있으며, 교육에서도 고려되어야 한다고 본다. 진화심리학 이론과 문화간 비교연구를 활용한다.",
+                "debate_style": "철학적이고 거시적인 관점의 사색형 스타일. '인류 진화사를 보면...', '생존과 번식의 관점에서...' 등 넓은 시각의 표현을 사용하며, 깊이 있고 성찰적인 어조로 발언한다."
             },
             {
                 "name": "최소연",
                 "expertise": "젠더학자, 성공회대 민주자유전공 교수",
                 "background": "젠더 이론과 교육 불평등 연구 12년, 시민단체 활동 경력, 성평등 정책 자문",
-                "perspective": "생물학적 결정론은 위험하며, 성별 분리 교육은 사회적 차별을 재생산한다는 관점. 젠더 이론과 사회구조적 분석, 역사적 사례를 활용하며, '그것은 전형적인 생물학적 환원주의입니다', '우리는 질문해야 합니다' 등 비판적이고 열정적인 어조를 사용한다."
+                "perspective": "생물학적 결정론은 위험하며, 성별 분리 교육은 사회적 차별을 재생산한다는 관점. 젠더 이론과 사회구조적 분석, 역사적 사례를 활용한다.",
+                "debate_style": "비판적이고 열정적인 성찰형 스타일. '그것은 전형적인 생물학적 환원주의입니다', '우리는 질문해야 합니다' 등 기존 관념에 도전하는 표현을 사용하며, 강한 확신과 열정적인 어조로 의견을 제시한다."
             }
         ]
     
@@ -275,6 +288,7 @@ class DebateManager:
                 expertise=persona['expertise'],
                 background=persona['background'],
                 perspective=persona['perspective'],
+                debate_style=persona['debate_style'],
                 config=self.config,
                 api_key=self.api_key
             )
@@ -282,27 +296,112 @@ class DebateManager:
         
         self.logger.info(f"{len(self.panel_agents)}명의 패널 에이전트 생성 완료")
     
+    def generate_topic_briefing(self, topic: str) -> str:
+        """토론 주제에 대한 배경 브리핑 생성"""
+        briefing_prompt = f"""
+토론 주제: {topic}
+
+당신은 전문적인 토론 진행자입니다. 위 토론 주제에 대해 시청자들이 쉽게 이해할 수 있도록 2-3분 분량의 간결한 브리핑을 작성해주세요.
+
+다음 내용을 포함해주세요:
+1. 이 주제가 왜 중요하고 논란이 되는지
+2. 현재 사회적 배경과 맥락
+3. 주요 쟁점들과 대립되는 관점들
+4. 이 토론이 우리에게 왜 의미가 있는지
+
+브리핑은 "[토론 진행자]"로 시작하여 친근하면서도 전문적인 톤으로 작성해주세요.
+"""
+        
+        try:
+            import openai
+            
+            client = openai.OpenAI(api_key=self.api_key)
+            
+            response = client.chat.completions.create(
+                model=self.config['ai']['model'],
+                messages=[
+                    {"role": "system", "content": self._create_system_prompt()},
+                    {"role": "user", "content": briefing_prompt}
+                ],
+                max_tokens=self.config['ai']['max_tokens'],
+                temperature=self.config['ai']['temperature']
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            self.logger.error(f"주제 브리핑 생성 실패: {e}")
+            return f"[토론 진행자] 오늘 우리가 다룰 주제는 '{topic}'입니다. 이는 현대 사회에서 중요한 논의가 필요한 주제로, 다양한 관점에서 심도 있게 살펴볼 필요가 있습니다."
+    
+    def display_personas(self, personas: List[Dict[str, str]]) -> None:
+        """생성된 페르소나를 출력"""
+        print(f"\n{Fore.CYAN}👥 생성된 전문가 패널{Style.RESET_ALL}")
+        print("=" * 80)
+        
+        for i, persona in enumerate(personas, 1):
+            print(f"\n{Fore.GREEN}📋 전문가 {i}: {persona['name']}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}🏢 직업/소속:{Style.RESET_ALL} {persona['expertise']}")
+            print(f"{Fore.YELLOW}📚 배경/서사:{Style.RESET_ALL} {persona['background']}")
+            print(f"{Fore.YELLOW}💭 핵심 관점:{Style.RESET_ALL} {persona['perspective']}")
+            print(f"{Fore.YELLOW}🎭 토론 스타일:{Style.RESET_ALL} {persona['debate_style']}")
+            print("-" * 80)
+    
+    def ask_user_confirmation(self) -> bool:
+        """사용자에게 토론 진행 여부를 묻기"""
+        print(f"\n{Fore.CYAN}🤔 위 패널로 토론을 진행하시겠습니까?{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}[y/Y] 예, 토론을 시작합니다{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}[n/N] 아니오, 토론을 종료합니다{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}[r/R] 페르소나를 다시 생성합니다{Style.RESET_ALL}")
+        
+        while True:
+            choice = input(f"\n{Fore.CYAN}선택하세요 (y/n/r): {Style.RESET_ALL}").strip().lower()
+            if choice in ['y', 'yes']:
+                return True
+            elif choice in ['n', 'no']:
+                print(f"{Fore.RED}토론을 종료합니다.{Style.RESET_ALL}")
+                return False
+            elif choice in ['r', 'regenerate']:
+                return None  # 재생성 신호
+            else:
+                print(f"{Fore.RED}올바른 선택지를 입력해주세요 (y/n/r){Style.RESET_ALL}")
+    
     def start_debate(self, topic: str) -> None:
         """토론 시작"""
-        print(f"\n{Fore.BLUE}🔍 주제 분석 및 전문가 패널 구성 중...{Style.RESET_ALL}")
-        
-        # 1. 전문가 페르소나 생성
-        personas = self.create_expert_personas(topic)
-        
-        # 2. 패널 에이전트 생성
-        self.create_panel_agents(personas)
-        
-        # 3. 토론 방식 안내
-        self._announce_debate_format(topic)
-        
-        # 4. 패널 소개
-        self._introduce_panels()
-        
-        # 5. 토론 진행
-        self._conduct_debate(topic)
-        
-        # 6. 토론 마무리
-        self._conclude_debate(topic)
+        while True:
+            print(f"\n{Fore.BLUE}🔍 주제 분석 및 전문가 패널 구성 중...{Style.RESET_ALL}")
+            
+            # 1. 전문가 페르소나 생성
+            personas = self.create_expert_personas(topic)
+            
+            # 2. 설정에 따라 페르소나 미리보기 및 사용자 확인
+            if self.show_personas_before_debate:
+                self.display_personas(personas)
+                user_choice = self.ask_user_confirmation()
+                
+                if user_choice is None:  # 재생성 요청
+                    print(f"\n{Fore.YELLOW}🔄 페르소나를 다시 생성합니다...{Style.RESET_ALL}")
+                    continue
+                elif not user_choice:  # 종료 요청
+                    return
+                # user_choice가 True면 토론 진행
+            
+            # 3. 패널 에이전트 생성
+            self.create_panel_agents(personas)
+            
+            # 4. 토론 방식 안내
+            self._announce_debate_format(topic)
+            
+            # 5. 패널 소개
+            self._introduce_panels()
+            
+            # 6. 토론 진행
+            self._conduct_debate(topic)
+            
+            # 7. 토론 마무리
+            self._conclude_debate(topic)
+            
+            # 토론이 완료되면 루프 종료
+            break
     
     def _announce_debate_format(self, topic: str) -> None:
         """토론 방식 안내"""
@@ -312,6 +411,11 @@ class DebateManager:
         print(f"시간: 약 {self.duration_minutes}분")
         print(f"참여자: {len(self.panel_agents)}명의 전문가 패널")
         print(f"진행: 순차 발언 → 상호 토론 → 최종 의견")
+        
+        # 주제 브리핑 생성 및 출력
+        print(f"\n{Fore.CYAN}📰 주제 브리핑{Style.RESET_ALL}")
+        briefing = self.generate_topic_briefing(topic)
+        print(f"\n{Fore.MAGENTA}{briefing}{Style.RESET_ALL}")
         
         # 매니저의 시작 발언
         start_message = self._generate_manager_message("토론 시작", f"주제: {topic}")

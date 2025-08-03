@@ -11,6 +11,45 @@ from autogen import ConversableAgent
 from .panel_agent import PanelAgent
 
 
+class HumanParticipant:
+    """인간 참여자를 나타내는 클래스"""
+    
+    def __init__(self, name: str):
+        self.name = name
+        self.is_human = True
+        # PanelAgent와 호환성을 위한 속성들
+        self.expertise = "일반 시민"
+        self.background = "다양한 경험과 관점을 가진 일반 시민"
+        self.perspective = "시민의 관점에서 현실적이고 균형잡힌 시각을 제시"
+        self.debate_style = "진솔하고 솔직한 표현으로 실제 경험을 바탕으로 한 의견 제시"
+    
+    def respond_to_topic(self, topic: str) -> str:
+        """주제에 대한 초기 의견 제시"""
+        print(f"\n{Fore.CYAN}💭 {self.name}님, 이 주제에 대한 당신의 의견을 들려주세요:{Style.RESET_ALL}")
+        print(f"주제: {topic}")
+        response = input(f"\n{Fore.GREEN}의견 입력: {Style.RESET_ALL}")
+        return f"[{self.name}] {response}"
+    
+    def respond_to_debate(self, context: str, statements: list) -> str:
+        """토론 중 의견 제시"""
+        print(f"\n{Fore.CYAN}💭 {self.name}님, 다른 패널들의 의견을 듣고 당신의 추가 의견이나 반박을 말씀해주세요:{Style.RESET_ALL}")
+        print(f"현재 상황: {context}")
+        response = input(f"\n{Fore.GREEN}의견 입력: {Style.RESET_ALL}")
+        return f"[{self.name}] {response}"
+    
+    def final_statement(self, topic: str) -> str:
+        """최종 의견 제시"""
+        print(f"\n{Fore.CYAN}💭 {self.name}님, 토론을 마무리하며 최종 의견을 말씀해주세요:{Style.RESET_ALL}")
+        response = input(f"\n{Fore.GREEN}최종 의견 입력: {Style.RESET_ALL}")
+        return f"[{self.name}] {response}"
+    
+    def introduce(self) -> str:
+        """자기소개"""
+        print(f"\n{Fore.CYAN}💭 {self.name}님, 다른 패널들과 청중에게 간단히 자기소개를 해주세요:{Style.RESET_ALL}")
+        response = input(f"\n{Fore.GREEN}자기소개: {Style.RESET_ALL}")
+        return f"[{self.name}] {response}"
+
+
 class DebateManager:
     """토론 진행 및 관리 에이전트"""
     
@@ -29,8 +68,12 @@ class DebateManager:
         # 토론 설정
         self.duration_minutes = config['debate']['duration_minutes']
         self.max_turns = config['debate']['max_turns_per_agent']
-        self.panel_size = config['debate']['panel_size']
+        self.panel_size = config['debate']['panel_size']  # 기본값, 사용자 참여시 조정됨
         self.show_debug_info = config['debate'].get('show_debug_info', True)
+        
+        # 사용자 참여 관련 변수 초기화
+        self.user_participation = False
+        self.user_name = None
         
         # 패널 에이전트들
         self.panel_agents: List[PanelAgent] = []
@@ -349,6 +392,22 @@ class DebateManager:
         
         self.logger.info(f"{len(self.panel_agents)}명의 패널 에이전트 생성 완료")
     
+    def _add_user_as_panelist(self) -> None:
+        """사용자를 패널리스트로 추가"""
+        user_participant = HumanParticipant(self.user_name)
+        
+        # 랜덤한 위치에 사용자 삽입 (첫 번째나 마지막이 아닌 중간 위치)
+        import random
+        if len(self.panel_agents) > 1:
+            # 1번째와 마지막 사이의 랜덤 위치
+            insert_position = random.randint(1, len(self.panel_agents))
+        else:
+            # 패널이 1명이면 마지막에 추가
+            insert_position = len(self.panel_agents)
+        
+        self.panel_agents.insert(insert_position, user_participant)
+        self.logger.info(f"사용자 '{self.user_name}'을 {insert_position + 1}번째 패널로 추가")
+    
     def generate_topic_briefing(self, topic: str) -> str:
         """토론 주제에 대한 배경 브리핑 생성"""
         briefing_prompt = f"""
@@ -418,8 +477,18 @@ class DebateManager:
             else:
                 print(f"{Fore.RED}올바른 선택지를 입력해주세요 (y/n/r){Style.RESET_ALL}")
     
-    def start_debate(self, topic: str) -> None:
+    def start_debate(self, topic: str, user_participation: bool = False) -> None:
         """토론 시작"""
+        self.user_participation = user_participation
+        
+        # 사용자 참여시 패널 수 조정 및 이름 입력
+        if user_participation:
+            self.panel_size = 3  # AI 패널 3명
+            self.user_name = input(f"\n{Fore.GREEN}토론에서 사용할 이름을 입력해주세요: {Style.RESET_ALL}").strip()
+            if not self.user_name:
+                self.user_name = "참여자"
+            print(f"\n{Fore.YELLOW}환영합니다, {self.user_name}님! 토론에 참여하게 됩니다.{Style.RESET_ALL}")
+        
         while True:
             print(f"\n{Fore.BLUE}🔍 주제 분석 및 전문가 패널 구성 중...{Style.RESET_ALL}")
             
@@ -440,6 +509,10 @@ class DebateManager:
             
             # 3. 패널 에이전트 생성
             self.create_panel_agents(personas)
+            
+            # 3-1. 사용자 참여시 사용자 정보 추가
+            if self.user_participation:
+                self._add_user_as_panelist()
             
             # 4. 토론 방식 안내
             self._announce_debate_format(topic)
@@ -462,7 +535,12 @@ class DebateManager:
         print(f"주제: {Fore.YELLOW}{topic}{Style.RESET_ALL}")
         print(f"방식: 패널토론")
         print(f"시간: 약 {self.duration_minutes}분")
-        print(f"참여자: {len(self.panel_agents)}명의 전문가 패널")
+        
+        if self.user_participation:
+            print(f"참여자: {len(self.panel_agents)}명의 AI 전문가 패널 + {self.user_name}님")
+        else:
+            print(f"참여자: {len(self.panel_agents)}명의 전문가 패널")
+        
         print(f"진행: 순차 발언 → 상호 토론 → 최종 의견")
         
         # 주제 브리핑 생성 및 출력
@@ -484,14 +562,21 @@ class DebateManager:
         
         for i, agent in enumerate(self.panel_agents, 1):
             intro = agent.introduce()
-            print(f"\n{Fore.GREEN}{intro}{Style.RESET_ALL}")
+            
+            # 사용자 소개는 다른 색상으로 표시
+            if hasattr(agent, 'is_human') and agent.is_human:
+                print(f"\n{Fore.CYAN}{intro}{Style.RESET_ALL}")
+            else:
+                print(f"\n{Fore.GREEN}{intro}{Style.RESET_ALL}")
             
             # 다음 패널 소개 전 매니저 발언
             if i < len(self.panel_agents):
                 transition_message = self._generate_manager_message("패널 전환", f"{agent.name} 패널의 소개가 끝났습니다. 다음 패널을 소개하겠습니다.")
                 print(f"\n{Fore.MAGENTA}[토론 진행자] {transition_message}{Style.RESET_ALL}")
             
-            time.sleep(1)
+            # 사용자가 아닌 경우만 대기
+            if not (hasattr(agent, 'is_human') and agent.is_human):
+                time.sleep(1)
     
     def _conduct_debate(self, topic: str) -> None:
         """토론 진행"""
@@ -517,14 +602,21 @@ class DebateManager:
             
             response = agent.respond_to_topic(topic)
             statements.append(response)
-            print(f"\n{response}")
+            
+            # 사용자 응답은 이미 형식이 갖춰져 있음
+            if hasattr(agent, 'is_human') and agent.is_human:
+                print(f"\n{Fore.CYAN}{response}{Style.RESET_ALL}")
+            else:
+                print(f"\n{response}")
             
             # 다음 발언자 안내
             if i < len(self.panel_agents):
                 next_message = self._generate_manager_message("다음 발언자", f"감사합니다. 이제 다음 패널의 의견을 들어보겠습니다.")
                 print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")
             
-            time.sleep(2)
+            # 사용자가 아닌 경우만 대기
+            if not (hasattr(agent, 'is_human') and agent.is_human):
+                time.sleep(2)
         
         # 2단계: 상호 토론
         print(f"\n{Fore.MAGENTA}📢 2단계: 상호 토론{Style.RESET_ALL}")
@@ -548,14 +640,21 @@ class DebateManager:
                 context = f"토론 라운드 {turn + 1}"
                 response = agent.respond_to_debate(context, statements)
                 statements.append(response)
-                print(f"\n{response}")
+                
+                # 사용자 응답은 이미 형식이 갖춰져 있음
+                if hasattr(agent, 'is_human') and agent.is_human:
+                    print(f"\n{Fore.CYAN}{response}{Style.RESET_ALL}")
+                else:
+                    print(f"\n{response}")
                 
                 # 다음 발언자 안내
                 if i < len(self.panel_agents):
                     next_message = self._generate_manager_message("다음 발언자", f"감사합니다. 다음 패널의 의견을 들어보겠습니다.")
                     print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")
                 
-                time.sleep(2)
+                # 사용자가 아닌 경우만 대기
+                if not (hasattr(agent, 'is_human') and agent.is_human):
+                    time.sleep(2)
     
     def _conclude_debate(self, topic: str) -> None:
         """토론 마무리"""
@@ -579,15 +678,22 @@ class DebateManager:
             turn_message = self._generate_manager_message("발언권 넘김", f"패널 이름: {agent.name} - 최종 의견을 말씀해 주시기 바랍니다.")
             print(f"\n{Fore.MAGENTA}[토론 진행자] {turn_message}{Style.RESET_ALL}")
             
-            final_response = agent.final_statement(topic, summary)
-            print(f"\n{final_response}")
+            # 사용자와 AI 패널 구분하여 최종 의견 수집
+            if hasattr(agent, 'is_human') and agent.is_human:
+                final_response = agent.final_statement(topic)
+                print(f"\n{Fore.CYAN}{final_response}{Style.RESET_ALL}")
+            else:
+                final_response = agent.final_statement(topic, summary)
+                print(f"\n{final_response}")
             
             # 다음 발언자 안내
             if i < len(self.panel_agents):
                 next_message = self._generate_manager_message("다음 발언자", f"감사합니다. 다음 패널의 최종 의견을 들어보겠습니다.")
                 print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")
             
-            time.sleep(2)
+            # 사용자가 아닌 경우만 대기
+            if not (hasattr(agent, 'is_human') and agent.is_human):
+                time.sleep(2)
         
         # 최종 결론
         conclusion = self._generate_conclusion(topic, summary)

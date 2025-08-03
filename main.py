@@ -159,9 +159,28 @@ def main():
             print(f"{Fore.RED}토론 주제가 입력되지 않았습니다.{Style.RESET_ALL}")
             return
         
+        # 사용자 참여 여부 확인
+        print(f"\n{Fore.CYAN}🤔 토론에 함께 참여하시겠습니까?{Style.RESET_ALL}")
+        print(f"   • yes: 토론자로 직접 참여합니다 (AI 패널 3명 + 사용자)")
+        print(f"   • no: AI 패널들의 토론을 관람합니다 (AI 패널 4명)")
+        
+        while True:
+            participate_choice = input(f"\n{Fore.GREEN}선택해주세요 (yes/no): {Style.RESET_ALL}").strip().lower()
+            
+            if participate_choice in ['yes', 'y', '네', '예']:
+                user_participation = True
+                print(f"\n{Fore.YELLOW}🎭 훌륭합니다! 당신도 토론자로 참여하게 됩니다.{Style.RESET_ALL}")
+                break
+            elif participate_choice in ['no', 'n', '아니오', '아니', '보기만']:
+                user_participation = False
+                print(f"\n{Fore.BLUE}👥 AI 패널들의 토론을 관람하시게 됩니다.{Style.RESET_ALL}")
+                break
+            else:
+                print(f"{Fore.RED}잘못된 입력입니다. 'yes' 또는 'no'를 입력해주세요.{Style.RESET_ALL}")
+        
         # Debate Manager 초기화 및 토론 시작
         debate_manager = DebateManager(config, api_key)
-        debate_manager.start_debate(topic)
+        debate_manager.start_debate(topic, user_participation)
         
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}토론이 중단되었습니다.{Style.RESET_ALL}")

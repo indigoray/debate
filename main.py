@@ -184,9 +184,19 @@ def main():
         
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}토론이 중단되었습니다.{Style.RESET_ALL}")
+        # 캡처 정리
+        try:
+            debate_manager.cleanup_capture()
+        except:
+            pass
     except Exception as e:
         logger.error(f"토론 실행 중 오류 발생: {e}")
         print(f"{Fore.RED}오류가 발생했습니다: {e}{Style.RESET_ALL}")
+        # 캡처 정리
+        try:
+            debate_manager.cleanup_capture()
+        except:
+            pass
 
 if __name__ == "__main__":
     main()

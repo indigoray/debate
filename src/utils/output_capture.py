@@ -207,8 +207,18 @@ class ConsoleCapture:
         for i, line in enumerate(lines):
             stripped_line = line.strip()
             
+            # AI 생성 마크다운 헤딩을 일반 텍스트로 변환 (폰트 크기 문제 해결)
+            if stripped_line.startswith('###'):
+                # ### 1. 주요 합의점 → **1. 주요 합의점**
+                heading_text = stripped_line.lstrip('#').strip()
+                result_lines.append(f"**{heading_text}**")
+            
+            # 수평선(---)을 시각적 구분선으로 변환
+            elif stripped_line == '---':
+                result_lines.append('・・・・・・・・・・・・・・・・・・・・')
+            
             # 토론 진행자 발언만 볼드체로 변환
-            if '[토론 진행자]' in stripped_line:
+            elif '[토론 진행자]' in stripped_line:
                 # 기존 볼드체 제거 후 새로 적용
                 clean_line = stripped_line.replace('**', '').replace('🎭 ', '')
                 modified_line = f"🎭 **{clean_line}**"

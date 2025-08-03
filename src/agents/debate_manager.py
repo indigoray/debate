@@ -4,12 +4,14 @@ Debate Manager - 토론 진행 및 관리 에이전트
 
 import time
 import logging
+import os
 from typing import Dict, Any, List, Optional
 from colorama import Fore, Style
 from autogen import ConversableAgent
 
 from .panel_agent import PanelAgent
 from .panel import Panel
+from ..utils.output_capture import ConsoleCapture
 
 
 class HumanParticipant(Panel):
@@ -87,6 +89,9 @@ class DebateManager:
         
         # 패널들 (AI 패널과 인간 참여자 모두 포함)
         self.panel_agents: List[Panel] = []
+        
+        # 출력 캡처 객체
+        self.console_capture = ConsoleCapture()
         
         # AutoGen 에이전트 생성
         self.agent = ConversableAgent(
@@ -503,6 +508,9 @@ class DebateManager:
         """토론 시작"""
         self.user_participation = user_participation
         
+        # 콘솔 출력 캡처 시작
+        self.console_capture.start_capture()
+        
         # 사용자 참여시 패널 수 조정 및 사용자 정보 입력
         if user_participation:
             self.panel_size = 3  # AI 패널 3명
@@ -561,6 +569,22 @@ class DebateManager:
             
             # 토론이 완료되면 루프 종료
             break
+        
+        # 토론 완료 후 마크다운 파일로 저장
+        try:
+            # 출력 캡처 중지
+            self.console_capture.stop_capture()
+            
+            # 마크다운 파일로 저장
+            saved_file = self.console_capture.save_to_markdown(topic)
+            
+            print(f"\n{Fore.GREEN}💾 토론 내용이 저장되었습니다:{Style.RESET_ALL}")
+            print(f"   파일: {saved_file}")
+            print(f"   경로: {os.path.abspath(saved_file)}")
+            
+        except Exception as e:
+            print(f"\n{Fore.YELLOW}⚠️ 토론 내용 저장 중 오류가 발생했습니다: {e}{Style.RESET_ALL}")
+            self.logger.error(f"마크다운 파일 저장 실패: {e}")
     
     def _announce_debate_format(self, topic: str) -> None:
         """토론 방식 안내"""
@@ -642,7 +666,7 @@ class DebateManager:
             else:
                 print(f"\n{response}")
             
-            # 다음 발언자 안내
+            # 다음 발언자 안내 (마지막 패널이 아닌 경우에만)
             if i < len(self.panel_agents):
                 next_message = self._generate_manager_message("다음 발언자", f"감사합니다. 이제 다음 패널의 의견을 들어보겠습니다.")
                 print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")
@@ -665,7 +689,7 @@ class DebateManager:
             round_message = self._generate_manager_message("라운드 시작", f"토론 라운드 {turn + 1}을 시작하겠습니다.")
             print(f"\n{Fore.MAGENTA}[토론 진행자] {round_message}{Style.RESET_ALL}")
             
-            for i, agent in enumerate(self.panel_agents):
+            for i, agent in enumerate(self.panel_agents, 1):
                 # 발언권 넘김
                 turn_message = self._generate_manager_message("발언권 넘김", f"패널 이름: {agent.name} - 이번 라운드의 의견을 말씀해 주시기 바랍니다.")
                 print(f"\n{Fore.MAGENTA}[토론 진행자] {turn_message}{Style.RESET_ALL}")
@@ -680,7 +704,7 @@ class DebateManager:
                 else:
                     print(f"\n{response}")
                 
-                # 다음 발언자 안내
+                # 다음 발언자 안내 (마지막 패널이 아닌 경우에만)
                 if i < len(self.panel_agents):
                     next_message = self._generate_manager_message("다음 발언자", f"감사합니다. 다음 패널의 의견을 들어보겠습니다.")
                     print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")
@@ -720,7 +744,7 @@ class DebateManager:
             else:
                 print(f"\n{final_response}")
             
-            # 다음 발언자 안내
+            # 다음 발언자 안내 (마지막 패널이 아닌 경우에만)
             if i < len(self.panel_agents):
                 next_message = self._generate_manager_message("다음 발언자", f"감사합니다. 다음 패널의 최종 의견을 들어보겠습니다.")
                 print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")

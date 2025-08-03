@@ -2,12 +2,13 @@
 Panel Agent - 토론 패널 전문가 에이전트
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 from autogen import ConversableAgent
+from .panel import Panel
 
 
-class PanelAgent:
+class PanelAgent(Panel):
     """토론 패널 전문가 에이전트"""
     
     def __init__(self, 
@@ -30,11 +31,9 @@ class PanelAgent:
             config: 설정 딕셔너리
             api_key: OpenAI API 키
         """
-        self.name = name
-        self.expertise = expertise
-        self.background = background
-        self.perspective = perspective
-        self.debate_style = debate_style
+        # 부모 클래스 초기화
+        super().__init__(name, expertise, background, perspective, debate_style)
+        
         self.config = config
         self.api_key = api_key
         self.logger = logging.getLogger(f'debate_agents.{name}')
@@ -57,6 +56,11 @@ class PanelAgent:
         )
         
         self.logger.info(f"Panel Agent '{name}' 초기화 완료")
+    
+    @property
+    def is_human(self) -> bool:
+        """AI 패널임을 나타냄"""
+        return False
     
     def _create_system_prompt(self) -> str:
         """시스템 프롬프트 생성"""
@@ -176,7 +180,7 @@ class PanelAgent:
 """
         return self.get_response(debate_prompt)
     
-    def final_statement(self, topic: str, debate_summary: str) -> str:
+    def final_statement(self, topic: str, debate_summary: Optional[str] = None) -> str:
         """최종 의견"""
         final_prompt = f"""
 토론 주제: {topic}

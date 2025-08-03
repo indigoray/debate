@@ -4,24 +4,31 @@ Debate Manager - 토론 진행 및 관리 에이전트
 
 import time
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from colorama import Fore, Style
 from autogen import ConversableAgent
 
 from .panel_agent import PanelAgent
+from .panel import Panel
 
 
-class HumanParticipant:
+class HumanParticipant(Panel):
     """인간 참여자를 나타내는 클래스"""
     
-    def __init__(self, name: str):
-        self.name = name
-        self.is_human = True
-        # PanelAgent와 호환성을 위한 속성들
-        self.expertise = "일반 시민"
-        self.background = "다양한 경험과 관점을 가진 일반 시민"
-        self.perspective = "시민의 관점에서 현실적이고 균형잡힌 시각을 제시"
-        self.debate_style = "진솔하고 솔직한 표현으로 실제 경험을 바탕으로 한 의견 제시"
+    def __init__(self, name: str, expertise: str = "시민 참여자"):
+        # 부모 클래스 초기화
+        super().__init__(
+            name=name,
+            expertise=expertise,
+            background=f"{expertise}로서 실제 경험과 현실적 관점을 보유",
+            perspective=f"{expertise}의 관점에서 실용적이고 균형잡힌 시각을 제시",
+            debate_style="진솔하고 솔직한 표현으로 실제 경험을 바탕으로 한 의견 제시"
+        )
+    
+    @property
+    def is_human(self) -> bool:
+        """인간 패널임을 나타냄"""
+        return True
     
     def respond_to_topic(self, topic: str) -> str:
         """주제에 대한 초기 의견 제시"""
@@ -37,9 +44,11 @@ class HumanParticipant:
         response = input(f"\n{Fore.GREEN}의견 입력: {Style.RESET_ALL}")
         return f"[{self.name}] {response}"
     
-    def final_statement(self, topic: str) -> str:
+    def final_statement(self, topic: str, debate_summary: Optional[str] = None) -> str:
         """최종 의견 제시"""
         print(f"\n{Fore.CYAN}💭 {self.name}님, 토론을 마무리하며 최종 의견을 말씀해주세요:{Style.RESET_ALL}")
+        if debate_summary:
+            print(f"토론 요약: {debate_summary[:200]}...")  # 요약의 일부만 표시
         response = input(f"\n{Fore.GREEN}최종 의견 입력: {Style.RESET_ALL}")
         return f"[{self.name}] {response}"
     
@@ -74,9 +83,10 @@ class DebateManager:
         # 사용자 참여 관련 변수 초기화
         self.user_participation = False
         self.user_name = None
+        self.user_expertise = None
         
-        # 패널 에이전트들
-        self.panel_agents: List[PanelAgent] = []
+        # 패널들 (AI 패널과 인간 참여자 모두 포함)
+        self.panel_agents: List[Panel] = []
         
         # AutoGen 에이전트 생성
         self.agent = ConversableAgent(
@@ -166,15 +176,27 @@ class DebateManager:
                 else:
                     constraints_text += f"- **{key}**: {value}\n"
         
+        # 사용자 참여시 추가 지침
+        user_participation_guide = ""
+        if self.user_participation:
+            user_participation_guide = f"""
+
+## 사용자 참여자 대우 지침
+- {self.user_name}님은 {self.user_expertise}로서 토론에 참여하는 **동등한 전문가 패널**입니다.
+- AI 패널과 동일하게 존중하고 전문적으로 대우하세요.
+- "{self.user_name} 패널께서"라고 호칭하며, 다른 패널들과 동일한 수준의 예의를 갖춰 진행하세요.
+- 사용자의 의견도 다른 전문가 의견과 동등한 가치로 인정하고 언급하세요.
+"""
+
         system_prompt = f"""
 {base_prompt}
 
 ## 역할과 책임
 1.  **토론 설계자**: 주제를 분석하여 가장 치열하고 흥미로운 토론이 될 수 있도록, 대립각이 명확한 전문가 패널을 구성하세요.
-2.  **적극적 중재자**: 단순히 발언 기회를 주는 것을 넘어, 토론이 교착 상태에 빠지거나 논점이 흐려질 때 핵심을 찌르는 질문을 던져 논의를 심화시키세요.
+2.  **적극적 중재자**: 단순히 발언 기회를 주는 것을 넘어, 토론이 교착 상태에 빠지거나 논점이 흐려될 때 핵심을 찌르는 질문을 던져 논의를 심화시키세요.
 3.  **논쟁 유도자**: 패널 간의 단순 의견 교환을 넘어, "방금 A패널의 주장에 대해 B패널께서는 어떻게 생각하십니까?" 와 같이 직접적인 반론과 재반론이 오가도록 적극적으로 유도하세요.
 4.  **압박 질문**: 중립성을 유지하면서도, "그 주장의 구체적인 근거는 무엇입니까?", "그 관점의 잠재적 맹점은 없습니까?" 와 같이 패널들이 자신의 논리를 명확히 방어하도록 압박 질문을 사용할 수 있습니다.
-5.  **종합 정리자**: 토론 종료 시, 각 패널의 최종 의견을 듣고, 단순 요약을 넘어 합의점, 대립점, 그리고 남은 과제까지 종합적으로 정리하여 제시하세요.
+5.  **종합 정리자**: 토론 종료 시, 각 패널의 최종 의견을 듣고, 단순 요약을 넘어 합의점, 대립점, 그리고 남은 과제까지 종합적으로 정리하여 제시하세요.{user_participation_guide}
 
 ## 토론 진행 방식
 - **1단계 (초기 의견 발표)**: 각 패널이 자신의 핵심 주장을 제시합니다.
@@ -394,7 +416,7 @@ class DebateManager:
     
     def _add_user_as_panelist(self) -> None:
         """사용자를 패널리스트로 추가"""
-        user_participant = HumanParticipant(self.user_name)
+        user_participant = HumanParticipant(self.user_name, self.user_expertise)
         
         # 랜덤한 위치에 사용자 삽입 (첫 번째나 마지막이 아닌 중간 위치)
         import random
@@ -481,13 +503,24 @@ class DebateManager:
         """토론 시작"""
         self.user_participation = user_participation
         
-        # 사용자 참여시 패널 수 조정 및 이름 입력
+        # 사용자 참여시 패널 수 조정 및 사용자 정보 입력
         if user_participation:
             self.panel_size = 3  # AI 패널 3명
+            
+            # 사용자 이름 입력
             self.user_name = input(f"\n{Fore.GREEN}토론에서 사용할 이름을 입력해주세요: {Style.RESET_ALL}").strip()
             if not self.user_name:
                 self.user_name = "참여자"
-            print(f"\n{Fore.YELLOW}환영합니다, {self.user_name}님! 토론에 참여하게 됩니다.{Style.RESET_ALL}")
+            
+            # 사용자 전문성/배경 입력
+            print(f"\n{Fore.CYAN}💡 토론에서 어떤 입장으로 참여하시겠습니까?{Style.RESET_ALL}")
+            print("예시: 직장인, 대학생, 개인투자자, 경제학 전공자, 금융업 종사자, 창업가 등")
+            
+            self.user_expertise = input(f"\n{Fore.GREEN}귀하의 배경이나 전문분야를 입력해주세요: {Style.RESET_ALL}").strip()
+            if not self.user_expertise:
+                self.user_expertise = "시민 참여자"
+            
+            print(f"\n{Fore.YELLOW}환영합니다, {self.user_name}님! ({self.user_expertise})으로 토론에 참여하게 됩니다.{Style.RESET_ALL}")
         
         while True:
             print(f"\n{Fore.BLUE}🔍 주제 분석 및 전문가 패널 구성 중...{Style.RESET_ALL}")
@@ -537,7 +570,7 @@ class DebateManager:
         print(f"시간: 약 {self.duration_minutes}분")
         
         if self.user_participation:
-            print(f"참여자: {len(self.panel_agents)}명의 AI 전문가 패널 + {self.user_name}님")
+            print(f"참여자: {len(self.panel_agents)}명의 전문가 패널 (AI 전문가 {len(self.panel_agents)-1}명 + {self.user_name}님({self.user_expertise}))")
         else:
             print(f"참여자: {len(self.panel_agents)}명의 전문가 패널")
         
@@ -564,7 +597,7 @@ class DebateManager:
             intro = agent.introduce()
             
             # 사용자 소개는 다른 색상으로 표시
-            if hasattr(agent, 'is_human') and agent.is_human:
+            if agent.is_human:
                 print(f"\n{Fore.CYAN}{intro}{Style.RESET_ALL}")
             else:
                 print(f"\n{Fore.GREEN}{intro}{Style.RESET_ALL}")
@@ -575,7 +608,7 @@ class DebateManager:
                 print(f"\n{Fore.MAGENTA}[토론 진행자] {transition_message}{Style.RESET_ALL}")
             
             # 사용자가 아닌 경우만 대기
-            if not (hasattr(agent, 'is_human') and agent.is_human):
+            if not agent.is_human:
                 time.sleep(1)
     
     def _conduct_debate(self, topic: str) -> None:
@@ -604,7 +637,7 @@ class DebateManager:
             statements.append(response)
             
             # 사용자 응답은 이미 형식이 갖춰져 있음
-            if hasattr(agent, 'is_human') and agent.is_human:
+            if agent.is_human:
                 print(f"\n{Fore.CYAN}{response}{Style.RESET_ALL}")
             else:
                 print(f"\n{response}")
@@ -615,7 +648,7 @@ class DebateManager:
                 print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")
             
             # 사용자가 아닌 경우만 대기
-            if not (hasattr(agent, 'is_human') and agent.is_human):
+            if not agent.is_human:
                 time.sleep(2)
         
         # 2단계: 상호 토론
@@ -642,7 +675,7 @@ class DebateManager:
                 statements.append(response)
                 
                 # 사용자 응답은 이미 형식이 갖춰져 있음
-                if hasattr(agent, 'is_human') and agent.is_human:
+                if agent.is_human:
                     print(f"\n{Fore.CYAN}{response}{Style.RESET_ALL}")
                 else:
                     print(f"\n{response}")
@@ -653,7 +686,7 @@ class DebateManager:
                     print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")
                 
                 # 사용자가 아닌 경우만 대기
-                if not (hasattr(agent, 'is_human') and agent.is_human):
+                if not agent.is_human:
                     time.sleep(2)
     
     def _conclude_debate(self, topic: str) -> None:
@@ -678,12 +711,13 @@ class DebateManager:
             turn_message = self._generate_manager_message("발언권 넘김", f"패널 이름: {agent.name} - 최종 의견을 말씀해 주시기 바랍니다.")
             print(f"\n{Fore.MAGENTA}[토론 진행자] {turn_message}{Style.RESET_ALL}")
             
-            # 사용자와 AI 패널 구분하여 최종 의견 수집
-            if hasattr(agent, 'is_human') and agent.is_human:
-                final_response = agent.final_statement(topic)
+            # 모든 패널에 동일한 인터페이스 사용 (시그니처 통일됨)
+            final_response = agent.final_statement(topic, summary)
+            
+            # 사용자와 AI 패널 구분하여 출력
+            if agent.is_human:
                 print(f"\n{Fore.CYAN}{final_response}{Style.RESET_ALL}")
             else:
-                final_response = agent.final_statement(topic, summary)
                 print(f"\n{final_response}")
             
             # 다음 발언자 안내
@@ -692,7 +726,7 @@ class DebateManager:
                 print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")
             
             # 사용자가 아닌 경우만 대기
-            if not (hasattr(agent, 'is_human') and agent.is_human):
+            if not agent.is_human:
                 time.sleep(2)
         
         # 최종 결론

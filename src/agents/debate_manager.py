@@ -586,15 +586,27 @@ class DebateManager:
     
     def _generate_conclusion(self, topic: str, summary: str) -> str:
         """최종 결론 생성"""
+        # 실제 참여한 패널 정보 구성
+        panel_info = ""
+        for i, agent in enumerate(self.panel_agents, 1):
+            panel_info += f"- **{agent.name}** ({agent.expertise}): {agent.perspective}\n"
+        
         conclusion_prompt = f"""
 토론 주제: {topic}
+
+참여 패널:
+{panel_info}
+
 토론 요약: {summary}
 
-토론을 마무리하며 다음을 포함한 종합적인 결론을 제시해주세요:
-1. 주요 합의점과 차이점
-2. 제기된 핵심 쟁점들
-3. 향후 고려사항
-4. 균형잡힌 시각에서의 종합 의견
+위 {len(self.panel_agents)}명의 패널이 참여한 토론을 마무리하며 다음을 포함한 종합적인 결론을 제시해주세요:
+
+1. **주요 합의점**: 패널들이 공통으로 동의한 부분들
+2. **주요 차이점과 핵심 쟁점**: 각 패널의 서로 다른 관점과 핵심 대립점 (각 패널의 이름과 전문분야를 명시하여 구체적으로 기술)
+3. **향후 고려사항**: 토론에서 제기된 과제와 남은 질문들
+4. **균형잡힌 시각에서의 종합 의견**: 전체적인 결론과 시사점
+
+반드시 실제 참여한 모든 패널의 관점을 구체적으로 반영하여 작성해주세요.
 """
         
         try:

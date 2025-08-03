@@ -5,13 +5,18 @@ debate:
   duration_minutes: 10
   max_turns_per_agent: 3
   panel_size: 4
- # 페르소나 생성 후 결과를 출력하고 토론 진행 여부를 묻기
-  show_personas_before_debate: true
+ # 더 상세한 정보 출력
+  show_debug_info: true
 # AI 모델 설정
 ai:
   model: "gpt-4.1"
   temperature: 0.7
-  max_tokens: 1500
+  max_tokens: 1500  # 기본 토큰 수
+  # 특정 작업에 더 많은 토큰이 필요한 경우 배수 적용
+  token_multipliers:
+    persona_generation: 2.0    # 페르소나 생성 (4명의 상세 정보)
+    conclusion: 2.0           # 최종 결론 (종합적 분석)
+    # briefing, summary, panel_response 등은 기본값(1.0) 사용
   api_key: your_openai_api_key_here
 
 # 로깅 설정
@@ -23,6 +28,90 @@ logging:
 agents:
   debate_manager:
     system_prompt: "당신은 전문적인 토론 진행자입니다. 균형잡힌 토론을 이끌어가세요."
+    # 응답 제약 조건
+    response_constraints:
+      max_length: "간결하고 명확하게 표현하세요. 불필요한 설명은 피하고 핵심만 전달하세요"
+      # 다른 제약 조건도 여기에 추가 가능
+    # 추가 지시사항 (사용자 정의 가능)
+    # 토론 진행자의 행동을 세부적으로 조정할 수 있습니다
+    # 사용법: additional_instructions: ["지시1", "지시2", "지시3"]
+    additional_instructions: [
+      "더 적극적으로 패널 간 논쟁을 유도하세요",
+      "각 발언 후 반드시 다른 패널에게 반박 기회를 주세요",
+      "논리적 허점을 지적하는 질문을 자주 사용하세요",
+      "토론이 지루해지면 논란이 될 만한 질문을 던지세요"
+    ]
   
   panel_agent:
     base_prompt: "당신은 해당 분야의 전문가입니다. 자신의 전문성을 바탕으로 논리적이고 설득력 있는 의견을 제시하세요."
+    # 응답 제약 조건
+    response_constraints:
+      max_length: "1000자 이내로 간결하고 명확하게 표현하세요"
+      # 다른 제약 조건도 여기에 추가 가능
+    # 추가 지시사항 (사용자 정의 가능)
+    # 패널 에이전트의 토론 스타일과 행동을 세부적으로 조정할 수 있습니다
+    # 사용법: additional_instructions: ["지시1", "지시2", "지시3"]
+    additional_instructions: [
+      "발언 시 반드시 구체적인 데이터나 통계를 포함하세요",
+      "상대방 의견에 대해 더 강하게 반박하세요",
+      "자신의 경험담을 활용해 설득력을 높이세요",
+      "감정적 어조보다는 논리적 근거를 중시하세요"
+    ]
+
+# ===== 설정 커스터마이징 사용법 =====
+# 
+# 1. 토큰 수 조정:
+#   ai:
+#     max_tokens: 2000  # 기본 토큰 수 증가
+#     token_multipliers:
+#       persona_generation: 2.5  # 더 상세한 페르소나 생성
+#       conclusion: 2.0         # 더 긴 결론
+# 
+# 2. 응답 제약 조건 조정:
+#   debate_manager:
+#     response_constraints:
+#       max_length: "매우 간결하게 표현하세요. 한 문장으로 요약해주세요"
+#   panel_agent:
+#     response_constraints:
+#       max_length: "300자 이내로 더 간결하게 표현하세요"
+#       tone: "학술적이고 정중한 어조를 유지하세요"
+# 
+# 3. 더 공격적인 토론을 원하는 경우:
+#   panel_agent:
+#     additional_instructions: [
+#       "상대방의 논리적 허점을 날카롭게 지적하세요",
+#       "자신의 주장을 더 강하게 방어하세요",
+#       "논쟁적인 어조를 사용해도 됩니다"
+#     ]
+# 
+# 4. 더 학술적인 토론을 원하는 경우:
+#   panel_agent:
+#     additional_instructions: [
+#       "모든 주장에 학술적 근거를 제시하세요",
+#       "인용문과 연구 결과를 자주 활용하세요",
+#       "정중하고 학술적인 어조를 유지하세요"
+#     ]
+# 
+# 5. 토론 진행자가 더 적극적으로 개입하길 원하는 경우:
+#   debate_manager:
+#     additional_instructions: [
+#       "패널들이 회피하는 질문을 지속적으로 추궁하세요",
+#       "논점에서 벗어나면 즉시 제지하세요",
+#       "핵심 쟁점으로 강제로 유도하세요"
+#     ]
+# 
+# 6. 기본 설정 사용:
+#   debate_manager:
+#     response_constraints:
+#       max_length: "간결하고 명확하게 표현하세요. 불필요한 설명은 피하고 핵심만 전달하세요"
+#     additional_instructions: []
+#   panel_agent:
+#     response_constraints:
+#       max_length: "1000자 이내로 간결하고 명확하게 표현하세요"
+#     additional_instructions: []
+# 
+# 주의사항:
+# - 추가 지시사항은 기본 prompt에 추가되어 적용됩니다
+# - 너무 많은 지시사항은 에이전트의 일관성을 해칠 수 있습니다
+# - 서로 모순되는 지시사항은 피해주세요
+# - token_multipliers는 해당 작업에만 적용되며, 기본값은 1.0입니다

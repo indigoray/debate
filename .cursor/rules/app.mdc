@@ -29,7 +29,7 @@ description: Debate_agents 앱의 핵심 개념과 아키텍처 정의
    - 각각 서로 다른 전문 분야의 전문가
    - 고유한 배경과 커리어 보유
    - 주제에 대한 서로 다른 관점과 의견 제시
-   - Manager의 진행에 따라 순차적 발언
+   - Manager의 진행에 따라 순차적 발언 및 패널간 토론
 
 ### 토론 진행 방식
 
@@ -60,9 +60,9 @@ description: Debate_agents 앱의 핵심 개념과 아키텍처 정의
 
 - **언어**: Python 3.11+
 - **AI Framework**: AutoGen (Multi-Agent Framework)
-- **AI 모델**: OpenAI GPT-4 Turbo
-- **가상환경**: Python venv (설정 완료)
-- **의존성 관리**: requirements.txt (설정 완료)
+- **AI 모델**: OpenAI GPT-4.1
+- **가상환경**: Python venv 
+- **의존성 관리**: requirements.txt
 
 ## 환경 설정 상태
 

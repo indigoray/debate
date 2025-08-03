@@ -61,6 +61,25 @@ class PanelAgent:
     def _create_system_prompt(self) -> str:
         """시스템 프롬프트 생성"""
         base_prompt = self.config['agents']['panel_agent']['base_prompt']
+        additional_instructions = self.config['agents']['panel_agent'].get('additional_instructions', [])
+        response_constraints = self.config['agents']['panel_agent'].get('response_constraints', {})
+        
+        # 추가 지시사항을 문자열로 변환
+        additional_text = ""
+        if additional_instructions:
+            additional_text = "\n\n## 추가 지시사항\n"
+            for i, instruction in enumerate(additional_instructions, 1):
+                additional_text += f"{i}. {instruction}\n"
+        
+        # 응답 제약 조건 텍스트 생성
+        constraints_text = ""
+        if response_constraints:
+            constraints_text = "\n\n## 응답 제약 조건\n"
+            for key, value in response_constraints.items():
+                if key == 'max_length':
+                    constraints_text += f"- **발언 길이**: {value}\n"
+                else:
+                    constraints_text += f"- **{key}**: {value}\n"
         
         system_prompt = f"""
 {base_prompt}
@@ -82,8 +101,7 @@ class PanelAgent:
 3.  **논리적 주장**: 당신의 '핵심 관점 및 논리'에 따라, 구체적인 데이터, 연구, 이론, 또는 당신의 경험(서사)을 근거로 주장을 펼치세요. 추상적인 구호나 감정적인 발언을 지양하고, 논리로 상대를 설득하세요.
 4.  **적극적 상호작용**: 다른 패널의 의견을 경청하되, 당신의 논리에 비추어 비판적으로 분석하고, 날카롭게 반박하거나 동의하며 토론을 주도하세요. 진행자의 질문에는 핵심을 정확히 파악하여 답변해야 합니다.
 5.  **발전하는 관점 (선택적)**: 토론이 진행됨에 따라, 다른 패널의 합리적인 주장을 일부 수용하여 자신의 논리를 더 정교하게 만들 수 있습니다. 하지만 핵심적인 신념은 끝까지 유지해야 합니다.
-6.  **간결하고 명확한 표현**: 발언은 500자 이내로, 핵심을 담아 명확하게 전달하세요.
-
+{constraints_text}{additional_text}
 ## 응답 형식
 모든 응답은 반드시 다음 형식으로 시작해야 합니다.
 "[{self.name}] (내용)"

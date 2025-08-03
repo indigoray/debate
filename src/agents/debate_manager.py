@@ -30,7 +30,7 @@ class DebateManager:
         self.duration_minutes = config['debate']['duration_minutes']
         self.max_turns = config['debate']['max_turns_per_agent']
         self.panel_size = config['debate']['panel_size']
-        self.show_personas_before_debate = config['debate'].get('show_personas_before_debate', True)
+        self.show_debug_info = config['debate'].get('show_debug_info', True)
         
         # 패널 에이전트들
         self.panel_agents: List[PanelAgent] = []
@@ -50,6 +50,25 @@ class DebateManager:
         )
         
         self.logger.info("Debate Manager 초기화 완료")
+        
+        # 디버그 정보 출력
+        if self.show_debug_info:
+            self._display_debug_info()
+    
+    def _display_debug_info(self) -> None:
+        """디버그 정보 출력"""
+        print(f"\n{Fore.CYAN}🔧 DEBUG: Debate Manager System Prompt{Style.RESET_ALL}")
+        print("=" * 80)
+        system_prompt = self._create_system_prompt()
+        print(f"{Fore.YELLOW}{system_prompt}{Style.RESET_ALL}")
+        print("=" * 80)
+    
+    def _get_max_tokens(self, task_type: str = "default") -> int:
+        """작업 유형에 따른 max_tokens 계산"""
+        base_tokens = self.config['ai']['max_tokens']
+        multipliers = self.config['ai'].get('token_multipliers', {})
+        multiplier = multipliers.get(task_type, 1.0)
+        return int(base_tokens * multiplier)
     
     def _generate_manager_message(self, message_type: str, context: str) -> str:
         """매니저 메시지 생성"""
@@ -84,6 +103,25 @@ class DebateManager:
     def _create_system_prompt(self) -> str:
         """시스템 프롬프트 생성"""
         base_prompt = self.config['agents']['debate_manager']['system_prompt']
+        additional_instructions = self.config['agents']['debate_manager'].get('additional_instructions', [])
+        response_constraints = self.config['agents']['debate_manager'].get('response_constraints', {})
+        
+        # 추가 지시사항을 문자열로 변환
+        additional_text = ""
+        if additional_instructions:
+            additional_text = "\n\n## 추가 지시사항\n"
+            for i, instruction in enumerate(additional_instructions, 1):
+                additional_text += f"{i}. {instruction}\n"
+        
+        # 응답 제약 조건 텍스트 생성
+        constraints_text = ""
+        if response_constraints:
+            constraints_text = "\n\n## 응답 제약 조건\n"
+            for key, value in response_constraints.items():
+                if key == 'max_length':
+                    constraints_text += f"- **발언 길이**: {value}\n"
+                else:
+                    constraints_text += f"- **{key}**: {value}\n"
         
         system_prompt = f"""
 {base_prompt}
@@ -101,7 +139,7 @@ class DebateManager:
 - **3단계 (심화 토론)**: 쟁점을 좁혀 더 깊이 있는 논쟁을 진행합니다.
 - **4단계 (최종 의견 발표 및 정리)**: 각 패널의 최종 의견을 듣고, 진행자가 전체 토론을 종합적으로 결론 냅니다.
 - 토론 시간: 약 {self.duration_minutes}분
-
+{constraints_text}{additional_text}
 응답할 때는 항상 **[토론 진행자]** 로 시작하세요.
 """
         return system_prompt
@@ -151,7 +189,7 @@ class DebateManager:
                     {"role": "system", "content": self._create_system_prompt()},
                     {"role": "user", "content": persona_prompt}
                 ],
-                max_tokens=self.config['ai']['max_tokens'],
+                max_tokens=self._get_max_tokens('persona_generation'),
                 temperature=self.config['ai']['temperature']
             )
             
@@ -287,7 +325,10 @@ class DebateManager:
         """패널 에이전트들 생성"""
         self.panel_agents = []
         
-        for persona in personas:
+        if self.show_debug_info:
+            print(f"\n{Fore.CYAN}🔧 DEBUG: Panel Agents System Prompts{Style.RESET_ALL}")
+        
+        for i, persona in enumerate(personas, 1):
             agent = PanelAgent(
                 name=persona['name'],
                 expertise=persona['expertise'],
@@ -298,6 +339,13 @@ class DebateManager:
                 api_key=self.api_key
             )
             self.panel_agents.append(agent)
+            
+            # 디버그 정보 출력
+            if self.show_debug_info:
+                print(f"\n{Fore.GREEN}📋 Panel {i}: {persona['name']}{Style.RESET_ALL}")
+                print("-" * 80)
+                print(f"{Fore.YELLOW}{agent.system_prompt}{Style.RESET_ALL}")
+                print("-" * 80)
         
         self.logger.info(f"{len(self.panel_agents)}명의 패널 에이전트 생성 완료")
     
@@ -379,7 +427,7 @@ class DebateManager:
             personas = self.create_expert_personas(topic)
             
             # 2. 설정에 따라 페르소나 미리보기 및 사용자 확인
-            if self.show_personas_before_debate:
+            if self.show_debug_info:
                 self.display_personas(personas)
                 user_choice = self.ask_user_confirmation()
                 
@@ -621,7 +669,7 @@ class DebateManager:
                     {"role": "system", "content": self._create_system_prompt()},
                     {"role": "user", "content": conclusion_prompt}
                 ],
-                max_tokens=self.config['ai']['max_tokens'],
+                max_tokens=self._get_max_tokens('conclusion'),
                 temperature=self.config['ai']['temperature']
             )
             

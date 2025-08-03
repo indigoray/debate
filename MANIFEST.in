@@ -1,0 +1,11 @@
+include README.md
+include LICENSE
+include config.yaml
+include config.yaml.example
+include requirements.txt
+include debate_agents_main.py
+recursive-include src *.py
+recursive-include src *.yaml
+recursive-include src *.yml
+global-exclude __pycache__
+global-exclude *.py[co]

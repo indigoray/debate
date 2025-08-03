@@ -49,11 +49,12 @@ pip install -r requirements.txt
 
 ### 4. 환경변수 설정
 ```bash
-# env_example.txt를 .env로 복사
-cp env_example.txt .env
+# 설정 파일 자동 생성 (첫 실행 시 config.yaml.example이 config.yaml로 복사됨)
+# 또는 수동으로 복사: cp config.yaml.example config.yaml
 
-# .env 파일을 편집하여 OpenAI API 키 설정
-# OPENAI_API_KEY=your_actual_api_key_here
+# config.yaml 파일을 편집하여 OpenAI API 키 설정
+# ai:
+#   api_key: your_actual_api_key_here
 ```
 
 ### 5. 애플리케이션 실행

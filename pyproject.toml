@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "debate-agents"
+version = "1.0.0"
+description = "AI 패널 토론 시뮬레이션 - 다양한 전문가 AI 에이전트들의 토론 시뮬레이션 시스템"
+readme = "README.md"
+license = "MIT"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+maintainers = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+keywords = ["ai", "debate", "simulation", "panel", "discussion", "autogen", "multi-agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Education",
+    "Topic :: Communications",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "autogen-agentchat>=0.7.1",
+    "autogen-core>=0.7.1",
+    "openai>=1.98.0",
+    "python-dotenv>=1.1.1",
+    "PyYAML>=6.0.2",
+    "colorama>=0.4.6",
+    "pyautogen>=0.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "flake8>=6.0",
+    "mypy>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-username/debate-agents"
+Documentation = "https://github.com/your-username/debate-agents#readme"
+Repository = "https://github.com/your-username/debate-agents.git"
+"Bug Reports" = "https://github.com/your-username/debate-agents/issues"
+
+[project.scripts]
+debate-agents = "debate_agents_main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.setuptools]
+py-modules = ["debate_agents_main"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.yml", "*.txt"]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true

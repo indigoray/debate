@@ -1,0 +1,142 @@
+---
+description: "개발 할 일 목록 - Streamlit UI 개선 및 다국어 지원"
+alwaysApply: false
+---
+
+# Debate Agents 개발 할 일 목록
+
+## 🎯 주요 개발 과제
+
+### 1. Streamlit으로 UI 개선
+
+#### 현재 상황
+
+- 콘솔 기반 애플리케이션 ([main.py](mdc:main.py), [debate_agents_main.py](mdc:debate_agents_main.py))
+- 사용자 입력과 출력이 터미널에서만 가능
+- 토론 로그는 마크다운 파일로만 저장 ([debate_logs/](mdc:debate_logs/))
+
+#### 구현할 기능들
+
+##### 1.1 기본 Streamlit 웹 인터페이스
+
+- [ ] `streamlit_app.py` 메인 파일 생성
+- [ ] 사이드바에 토론 설정 패널 구현
+  - 토론 주제 입력
+  - 토론 시간 설정 ([config.yaml](mdc:config.yaml) 연동)
+  - 패널 수 설정
+  - AI 모델 설정
+- [ ] 메인 화면에 실시간 토론 진행 상황 표시
+
+##### 1.2 실시간 토론 화면
+
+- [ ] 토론 진행 상태 표시 (진행바, 현재 발언자)
+- [ ] 각 패널 에이전트별 발언 박스 UI
+- [ ] 실시간 스트리밍으로 AI 응답 표시
+- [ ] 토론 매니저의 진행 안내 별도 영역
+
+##### 1.3 토론 결과 및 관리
+
+- [ ] 토론 완료 후 전체 요약 표시
+- [ ] 토론 히스토리 페이지 구현
+- [ ] 저장된 토론 로그 검색 및 필터링
+- [ ] 토론 결과 PDF/HTML 내보내기
+
+##### 1.4 설정 및 관리자 기능
+
+- [ ] OpenAI API 키 설정 UI
+- [ ] 에이전트 페르소나 커스터마이징 인터페이스
+- [ ] 토론 템플릿 저장/불러오기
+
+### 2. Config에 작동 언어 지정 및 모든 코드에서 다국어 지원
+
+#### 현재 시스템 상황
+
+- 모든 시스템 메시지가 한국어로 하드코딩됨
+- [config.yaml](mdc:config.yaml)에 언어 설정 없음
+- 에이전트 프롬프트가 단일 언어로만 작성됨
+
+#### 다국어 구현 기능들
+
+##### 2.1 Config 파일 다국어 설정
+
+- [ ] [config.yaml](mdc:config.yaml)에 `language` 섹션 추가
+
+  ```yaml
+  language:
+    default: "ko"  # ko, en, ja, zh 등
+    supported: ["ko", "en", "ja", "zh"]
+    ui_language: "ko"
+    agent_language: "ko"
+  ```
+
+##### 2.2 다국어 메시지 파일 시스템
+
+- [ ] `src/i18n/` 디렉토리 생성
+- [ ] 언어별 JSON/YAML 메시지 파일 생성
+  - `ko.yaml` - 한국어 메시지
+  - `en.yaml` - 영어 메시지
+  - `ja.yaml` - 일본어 메시지
+  - `zh.yaml` - 중국어 메시지
+
+##### 2.3 에이전트 다국어 지원
+
+- [ ] [src/agents/debate_manager.py](mdc:src/agents/debate_manager.py) 다국어 프롬프트 지원
+- [ ] [src/agents/panel_agent.py](mdc:src/agents/panel_agent.py) 다국어 프롬프트 지원
+- [ ] 페르소나 생성 시 언어별 문화적 배경 고려
+- [ ] 토론 진행 스타일 언어별 조정
+
+##### 2.4 UI 다국어 지원
+
+- [ ] Streamlit 앱 다국어 지원
+- [ ] 언어 선택 드롭다운 메뉴
+- [ ] 실시간 언어 변경 기능
+- [ ] 토론 로그 저장 시 언어별 디렉토리 분리
+
+##### 2.5 유틸리티 함수 구현
+
+- [ ] `src/utils/i18n.py` 다국어 헬퍼 클래스 구현
+- [ ] 언어 감지 및 자동 설정 기능
+- [ ] 다국어 로깅 시스템 구현
+
+## 🔧 기술적 고려사항
+
+### Streamlit 관련
+
+- Streamlit Session State를 활용한 토론 상태 관리
+- AsyncIO와 Streamlit의 호환성 고려
+- 실시간 업데이트를 위한 `st.rerun()` 활용
+- 토론 진행 중 사용자 인터페이스 잠금 처리
+
+### 다국어 지원 관련
+
+- UTF-8 인코딩 일관성 유지
+- 언어별 날짜/시간 형식 처리
+- RTL(Right-to-Left) 언어 지원 고려
+- 번역 품질 검증 시스템
+
+## 📋 우선순위
+
+### Phase 1 (High Priority)
+
+1. 기본 Streamlit 인터페이스 구축
+2. Config 언어 설정 추가
+3. 한국어/영어 이중 언어 지원
+
+### Phase 2 (Medium Priority)
+
+1. 고급 Streamlit 기능 (히스토리, 내보내기)
+2. 일본어/중국어 추가 지원
+3. 문화적 맥락 고려한 페르소나
+
+### Phase 3 (Low Priority)
+
+1. 관리자 기능 및 고급 설정
+2. 추가 언어 지원
+3. 성능 최적화
+
+## 🚨 주의사항
+
+- 기존 콘솔 애플리케이션 기능 유지
+- API 키 보안 강화
+- 다국어 전환 시 토론 일관성 유지
+- 언어별 토큰 사용량 차이 고려

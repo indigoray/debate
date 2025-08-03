@@ -1,8 +1,0 @@
-#!/usr/bin/expect -f
-
-spawn python main.py
-expect "토론 주제를 입력하세요:"
-send "테스트: 폰트 문제 수정 확인\r"
-expect "선택해주세요 (yes/no):"
-send "no\r"
-expect eof

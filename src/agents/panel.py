@@ -49,7 +49,7 @@ class Panel(ABC):
         pass
     
     @abstractmethod
-    def final_statement(self, topic: str, debate_summary: Optional[str] = None) -> str:
+    def final_statement(self, topic: str, debate_summary: Optional[str] = None, other_panels_statements: Optional[List] = None) -> str:
         """최종 의견 제시"""
         pass
     

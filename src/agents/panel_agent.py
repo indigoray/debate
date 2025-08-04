@@ -180,13 +180,32 @@ class PanelAgent(Panel):
 """
         return self.get_response(debate_prompt)
     
-    def final_statement(self, topic: str, debate_summary: Optional[str] = None) -> str:
+    def final_statement(self, topic: str, debate_summary: Optional[str] = None, other_panels_statements: Optional[List] = None) -> str:
         """최종 의견"""
+        # 다른 패널들의 발언 정리
+        other_comments = ""
+        if other_panels_statements:
+            other_comments = "\n\n## 다른 패널들의 주요 주장들:\n"
+            for stmt in other_panels_statements:
+                # 각 패널의 최신 발언만 포함 (너무 길어지는 것 방지)
+                other_comments += f"**[{stmt['agent_name']}]**: {stmt['content'][:200]}{'...' if len(stmt['content']) > 200 else ''}\n\n"
+        
         final_prompt = f"""
 토론 주제: {topic}
 
 토론 요약: {debate_summary}
+{other_comments}
 
-토론을 마무리하며 당신의 최종 의견과 핵심 메시지를 제시해주세요.
+토론을 마무리하며 다음을 포함한 최종 의견을 제시해주세요:
+
+1. **다른 패널들의 주장 중 공감하거나 반박하고 싶은 부분에 대한 간략한 커멘트**
+   - 위에 제시된 다른 패널들의 주장 중에서 자신의 주장과 연관성이 있는 부분을 선택하여 간략히 언급
+   - 동의하는 부분이나 다른 관점을 제시하고 싶은 부분에 대해 1-2문장으로 커멘트
+
+2. **당신의 최종 의견과 핵심 메시지**
+   - 토론 전체를 통해 확고해진 당신의 입장
+   - 가장 중요하다고 생각하는 핵심 메시지
+
+당신의 페르소나와 전문성을 바탕으로 논리적이고 설득력 있는 마무리 발언을 해주세요.
 """
         return self.get_response(final_prompt)

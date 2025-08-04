@@ -46,11 +46,21 @@ class HumanParticipant(Panel):
         response = input(f"\n{Fore.GREEN}의견 입력: {Style.RESET_ALL}")
         return f"[{self.name}] {response}"
     
-    def final_statement(self, topic: str, debate_summary: Optional[str] = None) -> str:
+    def final_statement(self, topic: str, debate_summary: Optional[str] = None, other_panels_statements: Optional[List] = None) -> str:
         """최종 의견 제시"""
         print(f"\n{Fore.CYAN}💭 {self.name}님, 토론을 마무리하며 최종 의견을 말씀해주세요:{Style.RESET_ALL}")
+        
         if debate_summary:
             print(f"토론 요약: {debate_summary[:200]}...")  # 요약의 일부만 표시
+            
+        # 다른 패널들의 주요 주장 표시
+        if other_panels_statements:
+            print(f"\n{Fore.YELLOW}📋 다른 패널들의 주요 주장들:{Style.RESET_ALL}")
+            for stmt in other_panels_statements:
+                print(f"• [{stmt['agent_name']}]: {stmt['content'][:150]}{'...' if len(stmt['content']) > 150 else ''}")
+            
+            print(f"\n{Fore.CYAN}위 주장들 중에서 공감하거나 반박하고 싶은 부분이 있다면 언급해주시고, 최종 의견을 말씀해주세요.{Style.RESET_ALL}")
+        
         response = input(f"\n{Fore.GREEN}최종 의견 입력: {Style.RESET_ALL}")
         return f"[{self.name}] {response}"
     
@@ -643,7 +653,8 @@ class DebateManager:
         debate_start_message = self._generate_manager_message("토론 시작", f"주제: {topic} - 본격적인 토론을 시작하겠습니다.")
         print(f"\n{Fore.MAGENTA}[토론 진행자] {debate_start_message}{Style.RESET_ALL}")
         
-        statements = []
+        # 모든 패널 발언을 저장할 인스턴스 변수로 변경
+        self.all_statements = []
         
         # 1단계: 초기 의견 발표
         print(f"\n{Fore.MAGENTA}📢 1단계: 초기 의견 발표{Style.RESET_ALL}")
@@ -658,7 +669,11 @@ class DebateManager:
             print(f"\n{Fore.MAGENTA}[토론 진행자] {turn_message}{Style.RESET_ALL}")
             
             response = agent.respond_to_topic(topic)
-            statements.append(response)
+            self.all_statements.append({
+                'agent_name': agent.name,
+                'stage': '초기 의견',
+                'content': response
+            })
             
             # 사용자 응답은 이미 형식이 갖춰져 있음
             if agent.is_human:
@@ -695,8 +710,14 @@ class DebateManager:
                 print(f"\n{Fore.MAGENTA}[토론 진행자] {turn_message}{Style.RESET_ALL}")
                 
                 context = f"토론 라운드 {turn + 1}"
+                # respond_to_debate를 위해 기존 statements 형태 유지
+                statements = [stmt['content'] for stmt in self.all_statements]
                 response = agent.respond_to_debate(context, statements)
-                statements.append(response)
+                self.all_statements.append({
+                    'agent_name': agent.name,
+                    'stage': f'토론 라운드 {turn + 1}',
+                    'content': response
+                })
                 
                 # 사용자 응답은 이미 형식이 갖춰져 있음
                 if agent.is_human:
@@ -735,8 +756,14 @@ class DebateManager:
             turn_message = self._generate_manager_message("발언권 넘김", f"패널 이름: {agent.name} - 최종 의견을 말씀해 주시기 바랍니다.")
             print(f"\n{Fore.MAGENTA}[토론 진행자] {turn_message}{Style.RESET_ALL}")
             
+            # 현재 패널 제외한 다른 패널들의 발언 수집
+            other_panels_statements = [
+                stmt for stmt in self.all_statements 
+                if stmt['agent_name'] != agent.name
+            ]
+            
             # 모든 패널에 동일한 인터페이스 사용 (시그니처 통일됨)
-            final_response = agent.final_statement(topic, summary)
+            final_response = agent.final_statement(topic, summary, other_panels_statements)
             
             # 사용자와 AI 패널 구분하여 출력
             if agent.is_human:

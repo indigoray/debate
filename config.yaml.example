@@ -24,6 +24,11 @@ logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
+# 출력 설정
+output:
+  # 타이핑 속도 (초 단위, 0이면 최대속도)
+  typing_speed: 0.02
+
 # 에이전트 설정
 agents:
   debate_manager:
@@ -60,7 +65,15 @@ agents:
 
 # ===== 설정 커스터마이징 사용법 =====
 # 
-# 1. 토큰 수 조정:
+# 1. 출력 속도 조정:
+#   output:
+#     typing_speed: 0.01     # 빠른 출력
+#   
+#   # 즉시 출력 (최대속도):
+#   output:
+#     typing_speed: 0
+# 
+# 2. 토큰 수 조정:
 #   ai:
 #     max_tokens: 2000  # 기본 토큰 수 증가
 #     token_multipliers:

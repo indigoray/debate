@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional
 import logging
 from autogen import ConversableAgent
 from .panel import Panel
+from ..utils.streaming import stream_openai_response, get_typing_speed
 
 
 class PanelAgent(Panel):
@@ -114,7 +115,7 @@ class PanelAgent(Panel):
     
     def get_response(self, prompt: str) -> str:
         """
-        주어진 프롬프트에 대한 응답 생성
+        주어진 프롬프트에 대한 응답 생성 (스트리밍 지원)
         
         Args:
             prompt: 입력 프롬프트
@@ -123,28 +124,49 @@ class PanelAgent(Panel):
             생성된 응답
         """
         try:
-            # AutoGen의 generate_reply 대신 직접 OpenAI API 호출
             import openai
             
             client = openai.OpenAI(api_key=self.api_key)
             
-            response = client.chat.completions.create(
-                model=self.config['ai']['model'],
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=self.config['ai']['max_tokens'],
-                temperature=self.config['ai']['temperature']
-            )
+            # config에서 타이핑 속도 가져오기
+            typing_speed = get_typing_speed(self.config)
             
-            result = response.choices[0].message.content
+            if typing_speed > 0:
+                # 스트리밍 출력 모드
+                result = stream_openai_response(
+                    client=client,
+                    model=self.config['ai']['model'],
+                    messages=[
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=self.config['ai']['max_tokens'],
+                    temperature=self.config['ai']['temperature'],
+                    color="",  # 패널별 색상은 호출하는 곳에서 처리
+                    typing_speed=typing_speed
+                )
+            else:
+                # 즉시 출력 모드 (typing_speed = 0)
+                response = client.chat.completions.create(
+                    model=self.config['ai']['model'],
+                    messages=[
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=self.config['ai']['max_tokens'],
+                    temperature=self.config['ai']['temperature']
+                )
+                result = response.choices[0].message.content
+                print(result)
+            
             self.logger.debug(f"응답 생성: {result[:100]}...")
             return result
             
         except Exception as e:
             self.logger.error(f"응답 생성 실패: {e}")
-            return f"[{self.name}] 죄송합니다. 응답을 생성하는 중 오류가 발생했습니다."
+            error_msg = f"[{self.name}] 죄송합니다. 응답을 생성하는 중 오류가 발생했습니다."
+            print(error_msg)
+            return error_msg
     
     def introduce(self) -> str:
         """자기소개"""

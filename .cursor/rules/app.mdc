@@ -86,3 +86,6 @@ description: Debate_agents 앱의 핵심 개념과 아키텍처 정의
 - 균형잡힌 토론을 위한 다양성 보장
 - 실제 전문가 수준의 깊이있는 논의 구현
 - 사용자 친화적인 콘솔 인터페이스 제공
+
+## 코딩 Agent 작업원칙
+- Agent Framework등을 작업할 때는 항상 최신 문서를 참고해서 작업할 것. (Context7이나 MS Learn Docs등의 툴을 사용할 것)

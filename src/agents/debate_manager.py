@@ -12,6 +12,7 @@ from autogen import ConversableAgent
 from .panel_agent import PanelAgent
 from .panel import Panel
 from ..utils.output_capture import ConsoleCapture
+from ..utils.streaming import stream_openai_response, stream_text, get_typing_speed
 
 
 class HumanParticipant(Panel):
@@ -258,22 +259,42 @@ class DebateManager:
 """
         
         try:
-            # AutoGen의 generate_reply 대신 직접 OpenAI API 호출
             import openai
             
             client = openai.OpenAI(api_key=self.api_key)
             
-            response = client.chat.completions.create(
-                model=self.config['ai']['model'],
-                messages=[
-                    {"role": "system", "content": self._create_system_prompt()},
-                    {"role": "user", "content": persona_prompt}
-                ],
-                max_tokens=self._get_max_tokens('persona_generation'),
-                temperature=self.config['ai']['temperature']
-            )
+            print(f"\n{Fore.YELLOW}🤖 전문가 패널을 생성하고 있습니다...{Style.RESET_ALL}")
             
-            result = response.choices[0].message.content
+            # 타이핑 속도 가져오기
+            typing_speed = get_typing_speed(self.config)
+            
+            if typing_speed > 0:
+                # 스트리밍으로 페르소나 생성 과정 출력
+                result = stream_openai_response(
+                    client=client,
+                    model=self.config['ai']['model'],
+                    messages=[
+                        {"role": "system", "content": self._create_system_prompt()},
+                        {"role": "user", "content": persona_prompt}
+                    ],
+                    max_tokens=self._get_max_tokens('persona_generation'),
+                    temperature=self.config['ai']['temperature'],
+                    color=Fore.CYAN,
+                    typing_speed=typing_speed
+                )
+            else:
+                # 즉시 출력 모드
+                response = client.chat.completions.create(
+                    model=self.config['ai']['model'],
+                    messages=[
+                        {"role": "system", "content": self._create_system_prompt()},
+                        {"role": "user", "content": persona_prompt}
+                    ],
+                    max_tokens=self._get_max_tokens('persona_generation'),
+                    temperature=self.config['ai']['temperature']
+                )
+                result = response.choices[0].message.content
+                print(f"{Fore.CYAN}{result}{Style.RESET_ALL}")
             
             # 디버깅을 위해 AI 응답 로그 출력
             self.logger.info(f"AI 페르소나 생성 응답: {result}")
@@ -466,17 +487,38 @@ class DebateManager:
             
             client = openai.OpenAI(api_key=self.api_key)
             
-            response = client.chat.completions.create(
-                model=self.config['ai']['model'],
-                messages=[
-                    {"role": "system", "content": self._create_system_prompt()},
-                    {"role": "user", "content": briefing_prompt}
-                ],
-                max_tokens=self.config['ai']['max_tokens'],
-                temperature=self.config['ai']['temperature']
-            )
+            # 타이핑 속도 가져오기
+            typing_speed = get_typing_speed(self.config)
             
-            return response.choices[0].message.content
+            if typing_speed > 0:
+                # 스트리밍으로 브리핑 생성
+                result = stream_openai_response(
+                    client=client,
+                    model=self.config['ai']['model'],
+                    messages=[
+                        {"role": "system", "content": self._create_system_prompt()},
+                        {"role": "user", "content": briefing_prompt}
+                    ],
+                    max_tokens=self.config['ai']['max_tokens'],
+                    temperature=self.config['ai']['temperature'],
+                    color=Fore.MAGENTA,
+                    typing_speed=typing_speed
+                )
+            else:
+                # 즉시 출력 모드
+                response = client.chat.completions.create(
+                    model=self.config['ai']['model'],
+                    messages=[
+                        {"role": "system", "content": self._create_system_prompt()},
+                        {"role": "user", "content": briefing_prompt}
+                    ],
+                    max_tokens=self.config['ai']['max_tokens'],
+                    temperature=self.config['ai']['temperature']
+                )
+                result = response.choices[0].message.content
+                print(f"{Fore.MAGENTA}{result}{Style.RESET_ALL}")
+            
+            return result
             
         except Exception as e:
             self.logger.error(f"주제 브리핑 생성 실패: {e}")
@@ -612,8 +654,8 @@ class DebateManager:
         
         # 주제 브리핑 생성 및 출력
         print(f"\n{Fore.CYAN}📰 주제 브리핑{Style.RESET_ALL}")
-        briefing = self.generate_topic_briefing(topic)
-        print(f"\n{Fore.MAGENTA}{briefing}{Style.RESET_ALL}")
+        print()  # 줄바꿈
+        briefing = self.generate_topic_briefing(topic)  # 스트리밍으로 출력됨
         
         # 매니저의 시작 발언
         start_message = self._generate_manager_message("토론 시작", f"주제: {topic}")
@@ -628,13 +670,14 @@ class DebateManager:
         print(f"\n{Fore.MAGENTA}[토론 진행자] {intro_message}{Style.RESET_ALL}")
         
         for i, agent in enumerate(self.panel_agents, 1):
-            intro = agent.introduce()
-            
-            # 사용자 소개는 다른 색상으로 표시
             if agent.is_human:
+                # 사용자 소개는 기존 방식 유지
+                intro = agent.introduce()
                 print(f"\n{Fore.CYAN}{intro}{Style.RESET_ALL}")
             else:
-                print(f"\n{Fore.GREEN}{intro}{Style.RESET_ALL}")
+                # AI 패널은 스트리밍 출력 (get_response에서 이미 출력됨)
+                print()  # 줄바꿈
+                intro = agent.introduce()
             
             # 다음 패널 소개 전 매니저 발언
             if i < len(self.panel_agents):
@@ -668,18 +711,20 @@ class DebateManager:
             turn_message = self._generate_manager_message("발언권 넘김", f"패널 이름: {agent.name} - 첫 번째 의견을 말씀해 주시기 바랍니다.")
             print(f"\n{Fore.MAGENTA}[토론 진행자] {turn_message}{Style.RESET_ALL}")
             
-            response = agent.respond_to_topic(topic)
+            if agent.is_human:
+                # 사용자 응답은 기존 방식 유지
+                response = agent.respond_to_topic(topic)
+                print(f"\n{Fore.CYAN}{response}{Style.RESET_ALL}")
+            else:
+                # AI 패널은 스트리밍 출력 (get_response에서 이미 출력됨)
+                print()  # 줄바꿈
+                response = agent.respond_to_topic(topic)
+            
             self.all_statements.append({
                 'agent_name': agent.name,
                 'stage': '초기 의견',
                 'content': response
             })
-            
-            # 사용자 응답은 이미 형식이 갖춰져 있음
-            if agent.is_human:
-                print(f"\n{Fore.CYAN}{response}{Style.RESET_ALL}")
-            else:
-                print(f"\n{response}")
             
             # 다음 발언자 안내 (마지막 패널이 아닌 경우에만)
             if i < len(self.panel_agents):
@@ -712,18 +757,21 @@ class DebateManager:
                 context = f"토론 라운드 {turn + 1}"
                 # respond_to_debate를 위해 기존 statements 형태 유지
                 statements = [stmt['content'] for stmt in self.all_statements]
-                response = agent.respond_to_debate(context, statements)
+                
+                if agent.is_human:
+                    # 사용자 응답은 기존 방식 유지
+                    response = agent.respond_to_debate(context, statements)
+                    print(f"\n{Fore.CYAN}{response}{Style.RESET_ALL}")
+                else:
+                    # AI 패널은 스트리밍 출력 (get_response에서 이미 출력됨)
+                    print()  # 줄바꿈
+                    response = agent.respond_to_debate(context, statements)
+                
                 self.all_statements.append({
                     'agent_name': agent.name,
                     'stage': f'토론 라운드 {turn + 1}',
                     'content': response
                 })
-                
-                # 사용자 응답은 이미 형식이 갖춰져 있음
-                if agent.is_human:
-                    print(f"\n{Fore.CYAN}{response}{Style.RESET_ALL}")
-                else:
-                    print(f"\n{response}")
                 
                 # 다음 발언자 안내 (마지막 패널이 아닌 경우에만)
                 if i < len(self.panel_agents):
@@ -763,13 +811,14 @@ class DebateManager:
             ]
             
             # 모든 패널에 동일한 인터페이스 사용 (시그니처 통일됨)
-            final_response = agent.final_statement(topic, summary, other_panels_statements)
-            
-            # 사용자와 AI 패널 구분하여 출력
             if agent.is_human:
+                # 사용자 응답은 기존 방식 유지
+                final_response = agent.final_statement(topic, summary, other_panels_statements)
                 print(f"\n{Fore.CYAN}{final_response}{Style.RESET_ALL}")
             else:
-                print(f"\n{final_response}")
+                # AI 패널은 스트리밍 출력 (get_response에서 이미 출력됨)
+                print()  # 줄바꿈
+                final_response = agent.final_statement(topic, summary, other_panels_statements)
             
             # 다음 발언자 안내 (마지막 패널이 아닌 경우에만)
             if i < len(self.panel_agents):
@@ -781,14 +830,14 @@ class DebateManager:
                 time.sleep(2)
         
         # 최종 결론
-        conclusion = self._generate_conclusion(topic, summary)
         print(f"\n{Fore.CYAN}🎯 토론 결론{Style.RESET_ALL}")
         
         # 매니저의 결론 안내
         conclusion_message = self._generate_manager_message("결론 안내", "이제 토론의 종합적인 결론을 말씀드리겠습니다.")
         print(f"\n{Fore.MAGENTA}[토론 진행자] {conclusion_message}{Style.RESET_ALL}")
         
-        print(f"\n{conclusion}")
+        print()  # 줄바꿈
+        conclusion = self._generate_conclusion(topic, summary)  # 스트리밍으로 출력됨
         
         # 매니저의 마무리 인사
         closing_message = self._generate_manager_message("마무리 인사", "오늘 토론에 참여해 주신 모든 패널께 감사드립니다. 토론을 마칩니다.")
@@ -803,11 +852,11 @@ class DebateManager:
 """
         
         try:
-            # AutoGen의 generate_reply 대신 직접 OpenAI API 호출
             import openai
             
             client = openai.OpenAI(api_key=self.api_key)
             
+            # 스트리밍으로 요약 생성 (출력 없이 생성만)
             response = client.chat.completions.create(
                 model=self.config['ai']['model'],
                 messages=[
@@ -849,22 +898,42 @@ class DebateManager:
 """
         
         try:
-            # AutoGen의 generate_reply 대신 직접 OpenAI API 호출
             import openai
             
             client = openai.OpenAI(api_key=self.api_key)
             
-            response = client.chat.completions.create(
-                model=self.config['ai']['model'],
-                messages=[
-                    {"role": "system", "content": self._create_system_prompt()},
-                    {"role": "user", "content": conclusion_prompt}
-                ],
-                max_tokens=self._get_max_tokens('conclusion'),
-                temperature=self.config['ai']['temperature']
-            )
+            # 타이핑 속도 가져오기
+            typing_speed = get_typing_speed(self.config)
             
-            return response.choices[0].message.content
+            if typing_speed > 0:
+                # 스트리밍으로 결론 생성
+                result = stream_openai_response(
+                    client=client,
+                    model=self.config['ai']['model'],
+                    messages=[
+                        {"role": "system", "content": self._create_system_prompt()},
+                        {"role": "user", "content": conclusion_prompt}
+                    ],
+                    max_tokens=self._get_max_tokens('conclusion'),
+                    temperature=self.config['ai']['temperature'],
+                    color=Fore.CYAN,
+                    typing_speed=typing_speed
+                )
+            else:
+                # 즉시 출력 모드
+                response = client.chat.completions.create(
+                    model=self.config['ai']['model'],
+                    messages=[
+                        {"role": "system", "content": self._create_system_prompt()},
+                        {"role": "user", "content": conclusion_prompt}
+                    ],
+                    max_tokens=self._get_max_tokens('conclusion'),
+                    temperature=self.config['ai']['temperature']
+                )
+                result = response.choices[0].message.content
+                print(f"{Fore.CYAN}{result}{Style.RESET_ALL}")
+            
+            return result
         except Exception as e:
             self.logger.error(f"결론 생성 실패: {e}")
             return "[토론 진행자] 토론을 마무리합니다. 감사합니다."

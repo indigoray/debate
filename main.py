@@ -76,6 +76,9 @@ def load_config():
                                 'conclusion': 2.0
                             }
                         },
+                        'output': {
+                            'typing_speed': 0.02
+                        },
                         'logging': {
                             'level': 'INFO',
                             'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -100,6 +103,9 @@ def load_config():
                             'persona_generation': 2.0,
                             'conclusion': 2.0
                         }
+                    },
+                    'output': {
+                        'typing_speed': 0.02
                     },
                     'logging': {
                         'level': 'INFO',

@@ -10,7 +10,7 @@ import logging
 import yaml
 import pkg_resources
 import shutil
-from dotenv import load_dotenv
+
 from colorama import init, Fore, Style
 
 from src.agents.debate_manager import DebateManager
@@ -114,8 +114,7 @@ def load_config():
 
 def main():
     """메인 함수"""
-    # 환경변수 로드
-    load_dotenv()
+
     
     # 설정 로드
     config, config_created = load_config()
@@ -123,8 +122,8 @@ def main():
     # 로거 설정
     logger = setup_logger(config['logging'])
     
-    # OpenAI API 키 확인 (config.yaml 우선, 환경변수 차선)
-    api_key = config.get('ai', {}).get('api_key') or os.getenv('OPENAI_API_KEY')
+    # OpenAI API 키 확인
+    api_key = config.get('ai', {}).get('api_key')
     
     # API 키가 'your_openai_api_key_here' 같은 플레이스홀더인 경우도 체크
     if not api_key or api_key in ['your_openai_api_key_here', 'your_actual_api_key_here', '']:
@@ -143,7 +142,7 @@ def main():
             print(f"{Fore.RED}❌ OpenAI API 키가 설정되지 않았습니다.{Style.RESET_ALL}")
             print(f"{Fore.YELLOW}🔧 해결 방법:{Style.RESET_ALL}")
             print(f"   • config.yaml의 ai.api_key에 OpenAI API 키를 설정하거나")
-            print(f"   • 환경변수 OPENAI_API_KEY를 설정하세요")
+
             print(f"   • API 키 발급: {Fore.BLUE}https://platform.openai.com/api-keys{Style.RESET_ALL}")
         sys.exit(1)
     

@@ -207,6 +207,143 @@ class ResponseGenerator:
         
         return message_templates.get(message_type, "진행하겠습니다.")
     
+    def analyze_debate_state(self, topic: str, recent_statements: List[str]) -> Dict[str, Any]:
+        """현재 토론 상태를 분석하여 다음 액션 결정 (Dynamic 모드용)"""
+        analysis_prompt = f"""
+토론 주제: {topic}
+
+최근 발언들:
+{chr(10).join(recent_statements[-6:]) if recent_statements else "아직 발언이 없습니다."}
+
+현재 토론 상태를 분석하고 다음을 결정해주세요:
+
+1. **토론 온도**: heated(열띤), balanced(균형잡힌), cold(식어가는), stuck(교착)
+2. **주요 쟁점**: 현재 가장 핵심적인 논쟁거리
+3. **놓친 관점**: 아직 다뤄지지 않은 중요한 관점
+4. **다음 액션**: 
+   - continue_normal: 정상 진행
+   - provoke_debate: 논쟁 유도 필요  
+   - change_angle: 새로운 관점 제시
+   - pressure_evidence: 근거 요구
+   - summarize_clarify: 정리 및 명확화
+   - focus_clash: 특정 패널 간 직접 대결
+
+5. **구체적 개입방안**: 위 액션을 위한 구체적인 질문이나 개입 방법
+
+JSON 형태로 답변:
+{{"temperature": "...", "main_issue": "...", "missing_perspective": "...", "next_action": "...", "intervention": "..."}}
+"""
+        
+        try:
+            import openai
+            import json
+            
+            client = openai.OpenAI(api_key=self.api_key)
+            
+            response = client.chat.completions.create(
+                model=self.config['ai']['model'],
+                messages=[
+                    {"role": "system", "content": "토론 분석 전문가로서 객관적으로 분석하세요."},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                max_tokens=500,
+                temperature=0.3
+            )
+            
+            # JSON 파싱 시도
+            content = response.choices[0].message.content.strip()
+            
+            # JSON 부분만 추출 (때로는 추가 설명이 있을 수 있음)
+            if '{' in content and '}' in content:
+                json_start = content.find('{')
+                json_end = content.rfind('}') + 1
+                json_content = content[json_start:json_end]
+                result = json.loads(json_content)
+            else:
+                raise ValueError("JSON 형식이 아님")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"토론 상태 분석 실패: {e}")
+            return {
+                "temperature": "balanced",
+                "main_issue": "일반적인 토론 진행",
+                "missing_perspective": "새로운 관점 필요",
+                "next_action": "continue_normal",
+                "intervention": "계속 진행하겠습니다."
+            }
+    
+    def generate_dynamic_manager_response(self, context: str, analysis: Dict[str, Any] = None, panel_agents: List = None) -> str:
+        """동적 매니저 응답 생성 (Dynamic 모드용)"""
+        if analysis is None:
+            analysis = {"next_action": "continue_normal", "intervention": "계속 진행하겠습니다."}
+        
+        # 패널 이름들 추출 (구체적 호칭을 위해)
+        panel_names = ""
+        if panel_agents:
+            panel_names = f"참여 패널: {', '.join([agent.name for agent in panel_agents])}"
+        
+        prompt = f"""
+상황: {context}
+토론 분석: {analysis}
+{panel_names}
+
+위 상황에서 토론 진행자로서 해야 할 말을 생성해주세요.
+
+다음 원칙을 따르세요:
+1. 토론 상황에 맞는 자연스러운 발언
+2. 필요시 패널들에게 압박 질문이나 심화 질문
+3. 논쟁이 부족하면 적극적으로 대립 유도
+4. 반복적이거나 뻔한 표현 피하기
+5. "[토론 진행자]"로 시작
+6. "양측 패널", "비달러권 패널" 같은 모호한 표현 대신 구체적인 패널 이름 사용
+7. 간결하고 명확하게 (너무 길면 안됨)
+
+**라운드 시작 시에는 다음 구조로:**
+- 이전 라운드의 핵심 내용 간략 정리 (1-2문장)
+- 이번 라운드에서 다루고 싶은 방향 제시 (1문장)
+- 첫 번째 패널에게 구체적 질문 (1-2문장)
+
+**라운드 타입별 특화:**
+- 일반 라운드: 이전 → 방향 → 첫 패널 질문
+- 논쟁_유도: 이전 → 논쟁 필요성 → 첫 패널 압박 질문
+- 직접_대결: 이전 → 대결 필요성 → 첫 대결 쌍 소개
+- 새로운_관점: 이전 → 새 관점 필요성 → 첫 패널 새 관점 질문
+- 근거_요구: 이전 → 근거 필요성 → 첫 패널 근거 요구
+
+예시:
+- 라운드 통합: "앞서 각 패널께서 기본 입장을 밝혀주셨습니다. 이제 좀 더 구체적인 근거와 사례를 통해 논의를 심화해보겠습니다. 김철수 패널께서는 방금 언급하신 생물학적 차이에 대한 구체적인 연구 사례를 제시해주실 수 있나요?"
+- 논쟁 유도: "지금까지의 논의에서 중요한 쟁점이 부각되고 있습니다. 이제 좀 더 직접적인 논쟁이 필요해 보입니다. 김철수 패널께서는 박미영 패널의 주장에 대해 어떻게 반박하시겠습니까?"
+"""
+        
+        try:
+            import openai
+            
+            client = openai.OpenAI(api_key=self.api_key)
+            
+            response = client.chat.completions.create(
+                model=self.config['ai']['model'],
+                messages=[
+                    {"role": "system", "content": "전문적인 토론 진행자로서 상황에 맞는 적절한 개입을 하세요."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=300,
+                temperature=0.7
+            )
+            
+            result = response.choices[0].message.content.strip()
+            
+            # "[토론 진행자]"가 없으면 추가
+            if not result.startswith("[토론 진행자]"):
+                result = f"[토론 진행자] {result}"
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"동적 응답 생성 실패: {e}")
+            return "[토론 진행자] 계속 진행하겠습니다."
+    
     def _get_max_tokens(self, task_type: str = "default") -> int:
         """작업 유형에 따른 max_tokens 계산"""
         base_tokens = self.config['ai']['max_tokens']

@@ -94,7 +94,11 @@ class DebatePresenter:
     
     def display_manager_message(self, message: str) -> None:
         """매니저 메시지 출력"""
-        print(f"\n{Fore.MAGENTA}[토론 진행자] {message}{Style.RESET_ALL}")
+        # 이미 [토론 진행자]가 포함되어 있으면 그대로 출력, 없으면 추가
+        if message.startswith("[토론 진행자]"):
+            print(f"\n{Fore.MAGENTA}{message}{Style.RESET_ALL}")
+        else:
+            print(f"\n{Fore.MAGENTA}[토론 진행자] {message}{Style.RESET_ALL}")
     
     def display_panel_introduction_header(self) -> None:
         """패널 소개 헤더 출력"""

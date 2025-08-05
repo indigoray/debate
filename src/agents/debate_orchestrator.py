@@ -28,7 +28,7 @@ class DebateOrchestrator:
         self.logger = logging.getLogger('debate_agents.orchestrator')
         
         # 토론 설정
-        self.max_turns = config['debate']['max_turns_per_agent']
+        self.debate_rounds = config['debate']['debate_rounds']
         
         # 컴포넌트들
         self.presenter = DebatePresenter(config)
@@ -77,7 +77,16 @@ class DebateOrchestrator:
                 time.sleep(1)
     
     def conduct_debate(self, topic: str, panel_agents: List) -> None:
-        """토론 진행"""
+        """토론 진행 - config에 따라 static 또는 dynamic 방식 선택"""
+        debate_mode = self.config['debate'].get('mode', 'static')
+        
+        if debate_mode == 'dynamic':
+            self.conduct_dynamic_debate(topic, panel_agents)
+        else:
+            self.conduct_static_debate(topic, panel_agents)
+    
+    def conduct_static_debate(self, topic: str, panel_agents: List) -> None:
+        """정적 토론 진행 (기존 방식)"""
         self.presenter.display_debate_start_header()
         
         # 매니저의 토론 시작 발언
@@ -92,6 +101,361 @@ class DebateOrchestrator:
         
         # 2단계: 상호 토론
         self._conduct_discussion_stage(panel_agents)
+    
+    def conduct_dynamic_debate(self, topic: str, panel_agents: List) -> None:
+        """동적 토론 진행 (새로운 방식)"""
+        self.presenter.display_debate_start_header()
+        
+        # 매니저의 토론 시작 발언
+        debate_start_message = self.response_generator.generate_manager_message("토론 시작", f"주제: {topic} - 본격적인 토론을 시작하겠습니다.")
+        self.presenter.display_manager_message(debate_start_message)
+        
+        # 모든 패널 발언을 저장할 인스턴스 변수 초기화
+        self.all_statements = []
+        
+        # Dynamic 설정 가져오기
+        dynamic_settings = self.config['debate'].get('dynamic_settings', {})
+        min_rounds = self.debate_rounds  # 최소 라운드 수
+        max_rounds = dynamic_settings.get('max_rounds', 6)  # 최대 라운드 수
+        analysis_frequency = dynamic_settings.get('analysis_frequency', 2)
+        intervention_threshold = dynamic_settings.get('intervention_threshold', 'cold')
+        
+        # 1단계: 초기 의견 발표 (고정)
+        self._conduct_initial_opinions_stage(topic, panel_agents)
+        
+        # 2단계: 동적 상호 토론
+        self.presenter.display_stage_header(2, "동적 상호 토론")
+        stage2_message = self.response_generator.generate_manager_message("단계 전환", "이제 두 번째 단계로 상호 토론을 진행하겠습니다. 토론 상황에 따라 진행 방식을 조정해 나가겠습니다.")
+        self.presenter.display_manager_message(stage2_message)
+        
+        current_round = 0
+        consecutive_cold_rounds = 0
+        
+        while current_round < max_rounds:
+            current_round += 1
+            
+            # 토론 상태 분석 (지정된 빈도로)
+            analysis = None
+            if current_round % analysis_frequency == 0 or current_round == 1:
+                statements_text = [stmt['content'] for stmt in self.all_statements]
+                analysis = self.response_generator.analyze_debate_state(topic, statements_text)
+                
+                # 디버그 모드에서만 분석 결과 출력
+                if self.config['debate'].get('show_debug_info', False):
+                    self.logger.info(f"토론 분석 결과 (라운드 {current_round}): {analysis}")
+            
+            # 분석 결과에 따른 진행 방식 결정
+            if analysis and analysis.get('next_action') == 'provoke_debate':
+                self._conduct_provoke_round(current_round, topic, panel_agents, analysis)
+            elif analysis and analysis.get('next_action') == 'focus_clash':
+                self._conduct_clash_round(current_round, topic, panel_agents, analysis)
+            elif analysis and analysis.get('next_action') == 'change_angle':
+                self._conduct_angle_change_round(current_round, topic, panel_agents, analysis)
+            elif analysis and analysis.get('next_action') == 'pressure_evidence':
+                self._conduct_evidence_round(current_round, topic, panel_agents, analysis)
+            else:
+                # 일반적인 라운드 진행
+                self._conduct_normal_round(current_round, panel_agents, analysis)
+            
+            # 연속으로 차가운 토론 감지 (최소 라운드 이후에만 조기 종료 고려)
+            if analysis and analysis.get('temperature') in ['cold', 'stuck']:
+                consecutive_cold_rounds += 1
+                if consecutive_cold_rounds >= 2 and current_round >= min_rounds:
+                    # 최소 라운드를 만족한 경우에만 조기 종료 고려
+                    early_end_analysis = {"intervention": "토론이 충분히 진행되었으므로 마무리하겠습니다."}
+                    early_end_msg = self.response_generator.generate_dynamic_manager_response(
+                        "토론 정리가 필요한 시점", early_end_analysis, panel_agents
+                    )
+                    self.presenter.display_manager_message(early_end_msg)
+                    break
+            else:
+                consecutive_cold_rounds = 0
+            
+            # 토론이 매우 활발하면 추가 라운드 허용
+            if analysis and analysis.get('temperature') == 'heated' and current_round == max_rounds:
+                max_rounds += 2
+                extension_msg = self.response_generator.generate_dynamic_manager_response(
+                    "열띤 토론으로 인한 연장", {"intervention": "토론이 매우 활발하여 조금 더 진행하겠습니다."}, panel_agents
+                )
+                self.presenter.display_manager_message(extension_msg)
+    
+    def _conduct_normal_round(self, round_number: int, panel_agents: List, analysis: Dict[str, Any] = None) -> None:
+        """일반적인 라운드 진행"""
+        self.presenter.display_round_header(round_number)
+        
+        # 모든 패널 발언
+        for i, agent in enumerate(panel_agents, 1):
+            if i == 1:
+                # 첫 번째 패널: 라운드 시작 + 이전 정리 + 방향 제시 + 첫 패널 질문을 통합
+                if analysis:
+                    # 이전 발언들 요약 정보 추가
+                    recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]  # 최근 6개 발언
+                    context_info = f"토론 라운드 {round_number} 시작 및 {agent.name} 패널 질문"
+                    enhanced_analysis = analysis.copy()
+                    enhanced_analysis['recent_statements'] = recent_statements
+                    enhanced_analysis['first_panel'] = agent.name
+                    
+                    integrated_message = self.response_generator.generate_dynamic_manager_response(
+                        context_info, enhanced_analysis, panel_agents
+                    )
+                else:
+                    integrated_message = self.response_generator.generate_manager_message(
+                        "발언권 넘김", f"패널 이름: {agent.name} - 토론 라운드 {round_number}의 의견을 말씀해 주시기 바랍니다."
+                    )
+                
+                self.presenter.display_manager_message(integrated_message)
+            else:
+                # 나머지 패널들: 간단한 발언권 넘김만
+                turn_message = self.response_generator.generate_manager_message(
+                    "발언권 넘김", f"패널 이름: {agent.name} - 이어서 의견을 말씀해 주시기 바랍니다."
+                )
+                self.presenter.display_manager_message(turn_message)
+            
+            context = f"토론 라운드 {round_number}"
+            statements = [stmt['content'] for stmt in self.all_statements]
+            
+            if agent.is_human:
+                response = agent.respond_to_debate(context, statements)
+                self.presenter.display_human_response(response)
+            else:
+                self.presenter.display_line_break()
+                response = agent.respond_to_debate(context, statements)
+            
+            self.all_statements.append({
+                'agent_name': agent.name,
+                'stage': f'동적 토론 라운드 {round_number}',
+                'content': response
+            })
+            
+            # 마지막 패널이 아니면 간단한 넘김 멘트 (옵션)
+            if i < len(panel_agents):
+                # 간결한 전환만
+                pass  # 다음 패널 질문에서 자연스럽게 이어짐
+            
+            if not agent.is_human:
+                time.sleep(2)
+    
+    def _conduct_provoke_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
+        """논쟁 유도 라운드"""
+        self.presenter.display_round_header(round_number)
+        
+        # 대립각이 큰 패널들을 우선 선택 (처음 2명, 나중에 더 정교한 선택 가능)
+        selected_agents = panel_agents[:min(2, len(panel_agents))]
+        
+        for i, agent in enumerate(selected_agents):
+            if i == 0:
+                # 첫 번째 패널: 라운드 시작 + 논쟁 유도 설명 + 첫 패널 질문을 통합
+                recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
+                context_info = f"논쟁 유도 라운드 {round_number} 시작 및 {agent.name} 패널 질문"
+                enhanced_analysis = analysis.copy()
+                enhanced_analysis['recent_statements'] = recent_statements
+                enhanced_analysis['first_panel'] = agent.name
+                enhanced_analysis['round_type'] = '논쟁_유도'
+                
+                integrated_message = self.response_generator.generate_dynamic_manager_response(
+                    context_info, enhanced_analysis, panel_agents
+                )
+                self.presenter.display_manager_message(integrated_message)
+            else:
+                # 나머지 패널들: 간단한 발언권 넘김
+                direct_question = self.response_generator.generate_manager_message(
+                    "발언권 넘김", f"패널 이름: {agent.name} - 이어서 의견을 말씀해 주시기 바랍니다."
+                )
+                self.presenter.display_manager_message(direct_question)
+            
+            # 해당 패널의 응답 받기
+            context = f"직접 반박 요청 - {analysis.get('main_issue', '핵심 쟁점')}"
+            statements = [stmt['content'] for stmt in self.all_statements]
+            
+            if agent.is_human:
+                response = agent.respond_to_debate(context, statements)
+                self.presenter.display_human_response(response)
+            else:
+                self.presenter.display_line_break()
+                response = agent.respond_to_debate(context, statements)
+            
+            self.all_statements.append({
+                'agent_name': agent.name,
+                'stage': f'논쟁 유도 라운드 {round_number}',
+                'content': response
+            })
+            
+            if not agent.is_human:
+                time.sleep(2)
+    
+    def _conduct_clash_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
+        """패널 간 직접 대결 라운드"""
+        self.presenter.display_round_header(round_number)
+        
+        is_first_pair = True
+        
+        # 2명씩 대결 구도로 진행
+        for i in range(0, len(panel_agents), 2):
+            if i + 1 < len(panel_agents):
+                agent1, agent2 = panel_agents[i], panel_agents[i + 1]
+                
+                # 첫 번째 쌍의 첫 번째 패널만 통합 메시지
+                if is_first_pair:
+                    recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
+                    context_info = f"직접 대결 라운드 {round_number} 시작 및 {agent1.name} vs {agent2.name} 대결"
+                    enhanced_analysis = analysis.copy()
+                    enhanced_analysis['recent_statements'] = recent_statements
+                    enhanced_analysis['clash_pair'] = f"{agent1.name} vs {agent2.name}"
+                    enhanced_analysis['round_type'] = '직접_대결'
+                    
+                    challenge_msg = self.response_generator.generate_dynamic_manager_response(
+                        context_info, enhanced_analysis, panel_agents
+                    )
+                    self.presenter.display_manager_message(challenge_msg)
+                    is_first_pair = False
+                else:
+                    # 나머지 쌍들은 간단한 대결 안내
+                    challenge_msg = self.response_generator.generate_manager_message(
+                        "발언권 넘김", f"패널 이름: {agent1.name} - 이어서 {agent2.name} 패널과 대결해 주시기 바랍니다."
+                    )
+                    self.presenter.display_manager_message(challenge_msg)
+                
+                # 첫 번째 패널 응답
+                context = f"직접 대결 - 입장 표명"
+                statements = [stmt['content'] for stmt in self.all_statements]
+                
+                if agent1.is_human:
+                    response1 = agent1.respond_to_debate(context, statements)
+                    self.presenter.display_human_response(response1)
+                else:
+                    self.presenter.display_line_break()
+                    response1 = agent1.respond_to_debate(context, statements)
+                
+                self.all_statements.append({
+                    'agent_name': agent1.name,
+                    'stage': f'직접 대결 라운드 {round_number}',
+                    'content': response1
+                })
+                
+                # 두 번째 패널 반박 - 간단한 발언권 넘김
+                counter_msg = self.response_generator.generate_manager_message(
+                    "발언권 넘김", f"패널 이름: {agent2.name} - 반박해 주시기 바랍니다."
+                )
+                self.presenter.display_manager_message(counter_msg)
+                
+                context = f"직접 대결 - 반박"
+                statements = [stmt['content'] for stmt in self.all_statements]
+                
+                if agent2.is_human:
+                    response2 = agent2.respond_to_debate(context, statements)
+                    self.presenter.display_human_response(response2)
+                else:
+                    self.presenter.display_line_break()
+                    response2 = agent2.respond_to_debate(context, statements)
+                
+                self.all_statements.append({
+                    'agent_name': agent2.name,
+                    'stage': f'직접 대결 라운드 {round_number}',
+                    'content': response2
+                })
+                
+                if not agent1.is_human:
+                    time.sleep(1)
+                if not agent2.is_human:
+                    time.sleep(1)
+    
+    def _conduct_angle_change_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
+        """새로운 관점 제시 라운드"""
+        self.presenter.display_round_header(round_number)
+        
+        # 전체 패널에게 새로운 관점으로 질문
+        for i, agent in enumerate(panel_agents, 1):
+            if i == 1:
+                # 첫 번째 패널: 라운드 시작 + 새로운 관점 설명 + 첫 패널 질문을 통합
+                recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
+                context_info = f"새로운 관점 라운드 {round_number} 시작 및 {agent.name} 패널 질문"
+                enhanced_analysis = analysis.copy()
+                enhanced_analysis['recent_statements'] = recent_statements
+                enhanced_analysis['first_panel'] = agent.name
+                enhanced_analysis['round_type'] = '새로운_관점'
+                
+                integrated_message = self.response_generator.generate_dynamic_manager_response(
+                    context_info, enhanced_analysis, panel_agents
+                )
+                self.presenter.display_manager_message(integrated_message)
+            else:
+                # 나머지 패널들: 간단한 발언권 넘김
+                perspective_question = self.response_generator.generate_manager_message(
+                    "발언권 넘김", f"패널 이름: {agent.name} - 이어서 의견을 말씀해 주시기 바랍니다."
+                )
+                self.presenter.display_manager_message(perspective_question)
+            
+            context = f"새관점: {analysis.get('missing_perspective', '새로운 시각')}"
+            statements = [stmt['content'] for stmt in self.all_statements]
+            
+            if agent.is_human:
+                response = agent.respond_to_debate(context, statements)
+                self.presenter.display_human_response(response)
+            else:
+                self.presenter.display_line_break()
+                response = agent.respond_to_debate(context, statements)
+            
+            self.all_statements.append({
+                'agent_name': agent.name,
+                'stage': f'새관점 라운드 {round_number}',
+                'content': response
+            })
+            
+            if i < len(panel_agents):
+                next_message = self.response_generator.generate_manager_message("다음 발언자", "다음 패널의 의견도 들어보겠습니다.")
+                self.presenter.display_manager_message(next_message)
+            
+            if not agent.is_human:
+                time.sleep(2)
+    
+    def _conduct_evidence_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
+        """근거 요구 라운드"""
+        self.presenter.display_round_header(round_number)
+        
+        # 각 패널에게 구체적 근거 요구
+        for i, agent in enumerate(panel_agents, 1):
+            if i == 1:
+                # 첫 번째 패널: 라운드 시작 + 근거 요구 설명 + 첫 패널 질문을 통합
+                recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
+                context_info = f"근거 제시 라운드 {round_number} 시작 및 {agent.name} 패널 질문"
+                enhanced_analysis = analysis.copy()
+                enhanced_analysis['recent_statements'] = recent_statements
+                enhanced_analysis['first_panel'] = agent.name
+                enhanced_analysis['round_type'] = '근거_요구'
+                
+                integrated_message = self.response_generator.generate_dynamic_manager_response(
+                    context_info, enhanced_analysis, panel_agents
+                )
+                self.presenter.display_manager_message(integrated_message)
+            else:
+                # 나머지 패널들: 간단한 발언권 넘김
+                evidence_request = self.response_generator.generate_manager_message(
+                    "발언권 넘김", f"패널 이름: {agent.name} - 이어서 근거를 제시해 주시기 바랍니다."
+                )
+                self.presenter.display_manager_message(evidence_request)
+            
+            context = f"근거 제시 요청"
+            statements = [stmt['content'] for stmt in self.all_statements]
+            
+            if agent.is_human:
+                response = agent.respond_to_debate(context, statements)
+                self.presenter.display_human_response(response)
+            else:
+                self.presenter.display_line_break()
+                response = agent.respond_to_debate(context, statements)
+            
+            self.all_statements.append({
+                'agent_name': agent.name,
+                'stage': f'근거 제시 라운드 {round_number}',
+                'content': response
+            })
+            
+            if i < len(panel_agents):
+                next_message = self.response_generator.generate_manager_message("다음 발언자", "다음 패널도 근거를 제시해주시기 바랍니다.")
+                self.presenter.display_manager_message(next_message)
+            
+            if not agent.is_human:
+                time.sleep(2)
     
     def _conduct_initial_opinions_stage(self, topic: str, panel_agents: List) -> None:
         """1단계: 초기 의견 발표"""
@@ -138,7 +502,7 @@ class DebateOrchestrator:
         stage2_message = self.response_generator.generate_manager_message("단계 전환", "이제 두 번째 단계로 상호 토론을 진행하겠습니다. 각 패널이 다른 의견에 대한 반응과 추가 의견을 말씀해 주시기 바랍니다.")
         self.presenter.display_manager_message(stage2_message)
         
-        for turn in range(self.max_turns - 1):
+        for turn in range(self.debate_rounds):
             self.presenter.display_round_header(turn + 1)
             
             # 라운드 시작 안내

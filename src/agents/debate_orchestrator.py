@@ -130,6 +130,8 @@ class DebateOrchestrator:
         
         current_round = 0
         consecutive_cold_rounds = 0
+        last_round_type = None  # 이전 라운드 타입 기록
+        last_change_angle_round = -10  # change_angle이 마지막으로 실행된 라운드 (쿨다운 추적)
         
         while current_round < max_rounds:
             current_round += 1
@@ -138,7 +140,8 @@ class DebateOrchestrator:
             analysis = None
             if current_round % analysis_frequency == 0 or current_round == 1:
                 statements_text = [stmt['content'] for stmt in self.all_statements]
-                analysis = self.response_generator.analyze_debate_state(topic, statements_text)
+                change_angle_cooldown = current_round - last_change_angle_round < 3  # 2라운드 쿨다운
+                analysis = self.response_generator.analyze_debate_state(topic, statements_text, last_round_type, change_angle_cooldown)
                 
                 # 디버그 모드에서만 분석 결과 출력
                 if self.config['debate'].get('show_debug_info', False):
@@ -147,15 +150,21 @@ class DebateOrchestrator:
             # 분석 결과에 따른 진행 방식 결정
             if analysis and analysis.get('next_action') == 'provoke_debate':
                 self._conduct_provoke_round(current_round, topic, panel_agents, analysis)
+                last_round_type = 'provoke_debate'
             elif analysis and analysis.get('next_action') == 'focus_clash':
                 self._conduct_clash_round(current_round, topic, panel_agents, analysis)
+                last_round_type = 'focus_clash'
             elif analysis and analysis.get('next_action') == 'change_angle':
                 self._conduct_angle_change_round(current_round, topic, panel_agents, analysis)
+                last_round_type = 'change_angle'
+                last_change_angle_round = current_round  # 쿨다운 추적용
             elif analysis and analysis.get('next_action') == 'pressure_evidence':
                 self._conduct_evidence_round(current_round, topic, panel_agents, analysis)
+                last_round_type = 'pressure_evidence'
             else:
                 # 일반적인 라운드 진행
                 self._conduct_normal_round(current_round, panel_agents, analysis)
+                last_round_type = 'continue_normal'
             
             # 연속으로 차가운 토론 감지 (최소 라운드 이후에만 조기 종료 고려)
             if analysis and analysis.get('temperature') in ['cold', 'stuck']:
@@ -171,17 +180,22 @@ class DebateOrchestrator:
             else:
                 consecutive_cold_rounds = 0
             
-            # 토론이 매우 활발하면 추가 라운드 허용
-            if analysis and analysis.get('temperature') == 'heated' and current_round == max_rounds:
-                max_rounds += 2
+            # 토론이 매우 활발하면 추가 라운드 허용 (단, 원래 설정의 1.5배까지만)
+            original_max_rounds = dynamic_settings.get('max_rounds', 6)
+            if (analysis and analysis.get('temperature') == 'heated' and 
+                current_round == max_rounds and max_rounds < int(original_max_rounds * 1.5)):
+                max_rounds += 1  # 2라운드 -> 1라운드로 축소
                 extension_msg = self.response_generator.generate_dynamic_manager_response(
-                    "열띤 토론으로 인한 연장", {"intervention": "토론이 매우 활발하여 조금 더 진행하겠습니다."}, panel_agents
+                    "열띤 토론으로 인한 연장", {"intervention": "토론이 매우 활발하여 1라운드 더 진행하겠습니다."}, panel_agents
                 )
                 self.presenter.display_manager_message(extension_msg)
     
     def _conduct_normal_round(self, round_number: int, panel_agents: List, analysis: Dict[str, Any] = None) -> None:
         """일반적인 라운드 진행"""
-        self.presenter.display_round_header(round_number)
+        # 일반 라운드 헤더 출력
+        print(f"\n📝 === 일반 토론 라운드 {round_number} === 📝")
+        print("💬 균형잡힌 토론을 이어갑니다")
+        print("=" * 50)
         
         # 모든 패널 발언
         for i, agent in enumerate(panel_agents, 1):
@@ -237,7 +251,10 @@ class DebateOrchestrator:
     
     def _conduct_provoke_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
         """논쟁 유도 라운드"""
-        self.presenter.display_round_header(round_number)
+        # 특별 라운드 헤더 출력
+        print(f"\n🔥 === 논쟁 유도 라운드 {round_number} === 🔥")
+        print("💥 패널 간 직접적인 반박과 논쟁을 유도합니다")
+        print("=" * 50)
         
         # 대립각이 큰 패널들을 우선 선택 (처음 2명, 나중에 더 정교한 선택 가능)
         selected_agents = panel_agents[:min(2, len(panel_agents))]
@@ -284,84 +301,139 @@ class DebateOrchestrator:
                 time.sleep(2)
     
     def _conduct_clash_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
-        """패널 간 직접 대결 라운드"""
-        self.presenter.display_round_header(round_number)
+        """패널 간 직접 대결 라운드 - 진짜 1:1 대결"""
+        # 특별 라운드 헤더 출력
+        print(f"\n⚔️  === 직접 대결 라운드 {round_number} === ⚔️")
+        print("🥊 대립각이 큰 2명의 패널이 1:1로 직접 맞서서 토론합니다")
+        print("=" * 60)
         
-        is_first_pair = True
+        # 가장 대립각이 큰 2명 선택 (단순하게 처음 2명 선택)
+        if len(panel_agents) >= 2:
+            agent1, agent2 = panel_agents[0], panel_agents[1]
+            other_agents = panel_agents[2:]  # 나머지 패널들
+        else:
+            # 패널이 2명 미만이면 일반 라운드로 전환
+            self._conduct_normal_round(round_number, panel_agents, analysis)
+            return
         
-        # 2명씩 대결 구도로 진행
-        for i in range(0, len(panel_agents), 2):
-            if i + 1 < len(panel_agents):
-                agent1, agent2 = panel_agents[i], panel_agents[i + 1]
-                
-                # 첫 번째 쌍의 첫 번째 패널만 통합 메시지
-                if is_first_pair:
-                    recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
-                    context_info = f"직접 대결 라운드 {round_number} 시작 및 {agent1.name} vs {agent2.name} 대결"
-                    enhanced_analysis = analysis.copy()
-                    enhanced_analysis['recent_statements'] = recent_statements
-                    enhanced_analysis['clash_pair'] = f"{agent1.name} vs {agent2.name}"
-                    enhanced_analysis['round_type'] = '직접_대결'
-                    
-                    challenge_msg = self.response_generator.generate_dynamic_manager_response(
-                        context_info, enhanced_analysis, panel_agents
-                    )
-                    self.presenter.display_manager_message(challenge_msg)
-                    is_first_pair = False
-                else:
-                    # 나머지 쌍들은 간단한 대결 안내
-                    challenge_msg = self.response_generator.generate_manager_message(
-                        "발언권 넘김", f"패널 이름: {agent1.name} - 이어서 {agent2.name} 패널과 대결해 주시기 바랍니다."
-                    )
-                    self.presenter.display_manager_message(challenge_msg)
-                
-                # 첫 번째 패널 응답
-                context = f"직접 대결 - 입장 표명"
-                statements = [stmt['content'] for stmt in self.all_statements]
-                
-                if agent1.is_human:
-                    response1 = agent1.respond_to_debate(context, statements)
-                    self.presenter.display_human_response(response1)
-                else:
-                    self.presenter.display_line_break()
-                    response1 = agent1.respond_to_debate(context, statements)
-                
-                self.all_statements.append({
-                    'agent_name': agent1.name,
-                    'stage': f'직접 대결 라운드 {round_number}',
-                    'content': response1
-                })
-                
-                # 두 번째 패널 반박 - 간단한 발언권 넘김
-                counter_msg = self.response_generator.generate_manager_message(
-                    "발언권 넘김", f"패널 이름: {agent2.name} - 반박해 주시기 바랍니다."
+        # 대결 시작 안내
+        recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
+        context_info = f"직접 대결 라운드 {round_number} 시작 및 {agent1.name} vs {agent2.name} 대결"
+        enhanced_analysis = analysis.copy()
+        enhanced_analysis['recent_statements'] = recent_statements
+        enhanced_analysis['clash_pair'] = f"{agent1.name} vs {agent2.name}"
+        enhanced_analysis['round_type'] = '직접_대결'
+        
+        challenge_msg = self.response_generator.generate_dynamic_manager_response(
+            context_info, enhanced_analysis, panel_agents
+        )
+        self.presenter.display_manager_message(challenge_msg)
+        
+        print(f"\n🔥 {agent1.name} vs {agent2.name} 직접 대결!")
+        print(f"{'='*50}")
+        
+        # 첫 번째 패널 입장 표명
+        context = f"직접 대결 - 입장 표명"
+        statements = [stmt['content'] for stmt in self.all_statements]
+        
+        if agent1.is_human:
+            response1 = agent1.respond_to_debate(context, statements)
+            self.presenter.display_human_response(response1)
+        else:
+            self.presenter.display_line_break()
+            response1 = agent1.respond_to_debate(context, statements)
+        
+        self.all_statements.append({
+            'agent_name': agent1.name,
+            'stage': f'직접 대결 라운드 {round_number}',
+            'content': response1
+        })
+        
+        # 두 번째 패널 반박
+        counter_msg = self.response_generator.generate_manager_message(
+            "발언권 넘김", f"패널 이름: {agent2.name} - 이제 {agent1.name} 패널의 주장을 정면으로 반박해 주시기 바랍니다."
+        )
+        self.presenter.display_manager_message(counter_msg)
+        
+        context = f"직접 대결 - 반박"
+        statements = [stmt['content'] for stmt in self.all_statements]
+        
+        if agent2.is_human:
+            response2 = agent2.respond_to_debate(context, statements)
+            self.presenter.display_human_response(response2)
+        else:
+            self.presenter.display_line_break()
+            response2 = agent2.respond_to_debate(context, statements)
+        
+        self.all_statements.append({
+            'agent_name': agent2.name,
+            'stage': f'직접 대결 라운드 {round_number}',
+            'content': response2
+        })
+        
+        # 첫 번째 패널 재반박
+        rebuttal_msg = self.response_generator.generate_manager_message(
+            "발언권 넘김", f"패널 이름: {agent1.name} - {agent2.name} 패널의 반박에 대해 재반박해 주시기 바랍니다."
+        )
+        self.presenter.display_manager_message(rebuttal_msg)
+        
+        context = f"직접 대결 - 재반박"
+        statements = [stmt['content'] for stmt in self.all_statements]
+        
+        if agent1.is_human:
+            response3 = agent1.respond_to_debate(context, statements)
+            self.presenter.display_human_response(response3)
+        else:
+            self.presenter.display_line_break()
+            response3 = agent1.respond_to_debate(context, statements)
+        
+        self.all_statements.append({
+            'agent_name': agent1.name,
+            'stage': f'직접 대결 라운드 {round_number}',
+            'content': response3
+        })
+        
+        # 나머지 패널들의 선택적 참여
+        if other_agents:
+            print(f"\n💬 1:1 대결 후 추가 의견")
+            print(f"{'='*40}")
+            
+            additional_msg = self.response_generator.generate_manager_message(
+                "추가 의견 안내", f"방금 {agent1.name} 패널과 {agent2.name} 패널의 치열한 대결을 보셨습니다. 다른 패널분들께서도 이 논쟁에 대한 추가 의견이 있으시면 간단히 말씀해 주시기 바랍니다."
+            )
+            self.presenter.display_manager_message(additional_msg)
+            
+            for agent in other_agents:
+                turn_msg = self.response_generator.generate_manager_message(
+                    "발언권 넘김", f"패널 이름: {agent.name} - 방금 대결에 대한 추가 의견을 간단히 말씀해 주시기 바랍니다."
                 )
-                self.presenter.display_manager_message(counter_msg)
+                self.presenter.display_manager_message(turn_msg)
                 
-                context = f"직접 대결 - 반박"
+                context = f"1:1 대결 후 추가 의견"
                 statements = [stmt['content'] for stmt in self.all_statements]
                 
-                if agent2.is_human:
-                    response2 = agent2.respond_to_debate(context, statements)
-                    self.presenter.display_human_response(response2)
+                if agent.is_human:
+                    response = agent.respond_to_debate(context, statements)
+                    self.presenter.display_human_response(response)
                 else:
                     self.presenter.display_line_break()
-                    response2 = agent2.respond_to_debate(context, statements)
+                    response = agent.respond_to_debate(context, statements)
                 
                 self.all_statements.append({
-                    'agent_name': agent2.name,
-                    'stage': f'직접 대결 라운드 {round_number}',
-                    'content': response2
+                    'agent_name': agent.name,
+                    'stage': f'직접 대결 라운드 {round_number} 추가 의견',
+                    'content': response
                 })
                 
-                if not agent1.is_human:
-                    time.sleep(1)
-                if not agent2.is_human:
+                if not agent.is_human:
                     time.sleep(1)
     
     def _conduct_angle_change_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
         """새로운 관점 제시 라운드"""
-        self.presenter.display_round_header(round_number)
+        # 특별 라운드 헤더 출력
+        print(f"\n🔄 === 새로운 관점 라운드 {round_number} === 🔄")
+        print("💡 토론의 시각을 바꿔서 새로운 관점을 도입합니다")
+        print("=" * 50)
         
         # 전체 패널에게 새로운 관점으로 질문
         for i, agent in enumerate(panel_agents, 1):
@@ -410,7 +482,10 @@ class DebateOrchestrator:
     
     def _conduct_evidence_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
         """근거 요구 라운드"""
-        self.presenter.display_round_header(round_number)
+        # 특별 라운드 헤더 출력
+        print(f"\n📋 === 근거 제시 라운드 {round_number} === 📋")
+        print("🔍 구체적인 데이터와 근거를 요구하여 주장을 검증합니다")
+        print("=" * 50)
         
         # 각 패널에게 구체적 근거 요구
         for i, agent in enumerate(panel_agents, 1):

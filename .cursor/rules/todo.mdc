@@ -140,3 +140,78 @@ alwaysApply: false
 - API 키 보안 강화
 - 다국어 전환 시 토론 일관성 유지
 - 언어별 토큰 사용량 차이 고려
+
+## 🤖 AutoGen 프레임워크 개선 과제
+
+### 현재 문제점 분석
+
+#### AutoGen 역할 부재 현황
+- **설치되어 있지만 실제 사용하지 않음**: requirements.txt에 `autogen-agentchat==0.7.1` 등이 있지만 제 역할을 못함
+- **ConversableAgent 객체만 생성**: [src/agents/debate_manager.py](mdc:src/agents/debate_manager.py)와 [src/agents/panel_agent.py](mdc:src/agents/panel_agent.py)에서 에이전트 객체는 생성하지만 실제로는 사용하지 않음
+- **직접 OpenAI API 호출**: 모든 AI 응답은 `openai.OpenAI(api_key=self.api_key)`를 통한 직접 API 호출로 처리
+- **중앙집중식 관리**: `DebateOrchestrator`가 모든 에이전트를 수동으로 제어하는 방식
+
+#### AutoGen의 핵심 기능 미활용
+- **Multi-Agent 대화**: 에이전트들이 서로 직접 대화하지 않고 순차적 응답만 수행
+- **자동 응답 체인**: AutoGen의 자동 워크플로우 기능 전혀 사용하지 않음  
+- **에이전트 간 협업**: 실제로는 단일 에이전트가 차례로 응답하는 방식
+
+### 3. AutoGen 아키텍처 개선
+
+#### 3.1 AutoGen 활용 방향 결정
+
+**Option 1: AutoGen을 제대로 활용**
+- [ ] AutoGen의 `GroupChat` 기능을 활용한 진정한 Multi-Agent 토론 시스템 구현
+- [ ] `GroupChatManager`를 통한 자동 토론 진행 시스템 구축
+- [ ] 에이전트 간 직접 소통 방식으로 아키텍처 재설계
+
+```python
+from autogen import GroupChat, GroupChatManager
+
+group_chat = GroupChat(
+    agents=[debate_manager, panel1, panel2, panel3, panel4],
+    messages=[],
+    max_round=20
+)
+manager = GroupChatManager(groupchat=group_chat, llm_config=llm_config)
+```
+
+**Option 2: AutoGen 제거하고 현재 방식 정리**
+- [ ] 불필요한 AutoGen 의존성 제거 ([requirements.txt](mdc:requirements.txt) 정리)
+- [ ] 직접 OpenAI API 방식으로 코드 정리 및 최적화
+- [ ] 더 가벼운 시스템으로 리팩토링
+
+**Option 3: 하이브리드 접근**
+- [ ] 토론의 특정 부분(자유 토론)에서만 AutoGen 활용
+- [ ] 구조화된 진행 부분은 현재 방식 유지
+- [ ] 점진적 마이그레이션 방식 채택
+
+#### 3.2 Multi-Agent 커뮤니케이션 개선
+
+- [ ] 에이전트 간 직접 소통 방식 구현
+- [ ] 현재 중앙집중식(DebateOrchestrator) → 분산형 아키텍처로 전환
+- [ ] 자율적 에이전트 대화 시스템 구축
+
+#### 3.3 성능 및 효율성 분석
+
+- [ ] AutoGen 자동 워크플로우 vs 수동 프롬프팅 방식 성능 비교
+- [ ] 토큰 사용량 최적화 분석
+- [ ] 응답 품질 및 일관성 테스트
+
+#### 3.4 기술적 구현 과제
+
+- [ ] AutoGen `ConversableAgent` 설정 최적화
+- [ ] `human_input_mode` 및 `max_consecutive_auto_reply` 튜닝
+- [ ] 토론 플로우에 맞는 에이전트 역할 재정의
+
+### 우선순위 (AutoGen 관련)
+
+**Phase 1**: AutoGen 활용 방향 결정 및 아키텍처 설계
+**Phase 2**: 선택된 방향에 따른 구현 (GroupChat vs 제거 vs 하이브리드)
+**Phase 3**: 성능 최적화 및 안정성 테스트
+
+### 🔍 추가 분석 필요사항
+
+- AutoGen 최신 버전 기능 조사 ([Context7](mdc:Context7) 활용)
+- Multi-Agent 토론 시스템 베스트 프랙티스 연구
+- 현재 시스템의 토론 품질 vs AutoGen 활용 시 품질 비교

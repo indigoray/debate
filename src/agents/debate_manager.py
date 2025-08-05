@@ -1,23 +1,24 @@
 """
-Debate Manager - 토론 진행 및 관리 에이전트
+Debate Manager - 토론 진행 및 관리 에이전트 (메인 오케스트레이터)
 """
 
-import time
 import logging
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from colorama import Fore, Style
 from autogen import ConversableAgent
 
 from .panel_agent import PanelAgent
 from .panel import Panel
-from .panel_human import PanelHuman
+from .panel_generator import PanelGenerator
+from .response_generator import ResponseGenerator
+from .debate_orchestrator import DebateOrchestrator
+from .debate_presenter import DebatePresenter
 from ..utils.output_capture import ConsoleCapture
-from ..utils.streaming import stream_openai_response, stream_text, get_typing_speed
 
 
 class DebateManager:
-    """토론 진행 및 관리 에이전트"""
+    """토론 진행 및 관리 에이전트 (메인 오케스트레이터)"""
     
     def __init__(self, config: Dict[str, Any], api_key: str):
         """
@@ -33,7 +34,6 @@ class DebateManager:
         
         # 토론 설정
         self.duration_minutes = config['debate']['duration_minutes']
-        self.max_turns = config['debate']['max_turns_per_agent']
         self.panel_size = config['debate']['panel_size']  # 기본값, 사용자 참여시 조정됨
         self.show_debug_info = config['debate'].get('show_debug_info', True)
         
@@ -47,6 +47,12 @@ class DebateManager:
         
         # 출력 캡처 객체
         self.console_capture = ConsoleCapture()
+        
+        # 컴포넌트들
+        self.panel_generator = PanelGenerator(config, api_key)
+        self.response_generator = ResponseGenerator(config, api_key)
+        self.orchestrator = DebateOrchestrator(config, api_key)
+        self.presenter = DebatePresenter(config)
         
         # AutoGen 에이전트 생성
         self.agent = ConversableAgent(
@@ -66,52 +72,9 @@ class DebateManager:
         
         # 디버그 정보 출력
         if self.show_debug_info:
-            self._display_debug_info()
+            self.presenter.display_debug_info(self._create_system_prompt())
     
-    def _display_debug_info(self) -> None:
-        """디버그 정보 출력"""
-        print(f"\n{Fore.CYAN}🔧 DEBUG: Debate Manager System Prompt{Style.RESET_ALL}")
-        print("=" * 80)
-        system_prompt = self._create_system_prompt()
-        print(f"{Fore.YELLOW}{system_prompt}{Style.RESET_ALL}")
-        print("=" * 80)
-    
-    def _get_max_tokens(self, task_type: str = "default") -> int:
-        """작업 유형에 따른 max_tokens 계산"""
-        base_tokens = self.config['ai']['max_tokens']
-        multipliers = self.config['ai'].get('token_multipliers', {})
-        multiplier = multipliers.get(task_type, 1.0)
-        return int(base_tokens * multiplier)
-    
-    def _generate_manager_message(self, message_type: str, context: str) -> str:
-        """매니저 메시지 생성"""
-        # 패널 이름 추출
-        panel_name = ""
-        if "패널 이름:" in context:
-            panel_name = context.split("패널 이름:")[1].split("-")[0].strip()
-        
-        # 토론 주제 추출
-        topic = ""
-        if "주제:" in context:
-            topic = context.split("주제:")[1].split("-")[0].strip()
-        
-        # 기본 메시지 템플릿
-        message_templates = {
-            "토론 시작": f"환영합니다. 오늘의 토론 주제는 '{topic}'입니다. 본격적인 토론을 시작하겠습니다.",
-            "패널 소개": "이제 각 패널을 소개하겠습니다.",
-            "패널 전환": "다음 패널을 소개하겠습니다.",
-            "단계 안내": "첫 번째 단계로 각 패널의 초기 의견을 들어보겠습니다.",
-            "발언권 넘김": f"{panel_name} 패널께서 말씀해 주시기 바랍니다.",
-            "다음 발언자": "감사합니다. 다음 패널의 의견을 들어보겠습니다.",
-            "라운드 시작": "새로운 라운드를 시작하겠습니다.",
-            "단계 전환": "이제 두 번째 단계로 상호 토론을 진행하겠습니다.",
-            "토론 마무리": "이제 토론을 마무리하는 시간입니다.",
-            "최종 의견 안내": "이제 각 패널의 최종 의견을 들어보겠습니다.",
-            "결론 안내": "이제 토론의 종합적인 결론을 말씀드리겠습니다.",
-            "마무리 인사": "오늘 토론에 참여해 주신 모든 패널께 감사드립니다. 토론을 마칩니다."
-        }
-        
-        return message_templates.get(message_type, "진행하겠습니다.")
+
     
     def _create_system_prompt(self) -> str:
         """시스템 프롬프트 생성"""
@@ -169,339 +132,16 @@ class DebateManager:
 """
         return system_prompt
     
-    def create_expert_personas(self, topic: str) -> List[Dict[str, str]]:
-        """주제에 맞는 전문가 페르소나 생성"""
-        persona_prompt = f"""
-# 페르소나 생성 지시문
-
-## 토론 주제
-{topic}
-
-## 미션
-당신은 최고의 토론 프로그램을 만드는 PD입니다. 위 토론 주제에 대해 가장 흥미롭고, 치열하며, 깊이 있는 토론을 만들어낼 수 있는 {self.panel_size}명의 입체적인 전문가 패널을 캐스팅해주세요.
-
-## 패널 구성 원칙
-1.  **선명한 대립각**: 패널들은 단순히 다른 의견을 가진 것이 아니라, 세계관이나 신념 수준에서 뚜렷하게 대립해야 합니다. 찬성과 반대 입장을 명확히 나누고, 그 안에서도 결이 다른 관점을 제시해주세요.
-2.  **입체적 캐릭터**: 단순한 '전문가'가 아닌, 개인적인 신념, 독특한 경험, 개성적인 말투를 가진 한 명의 '인물'을 만들어주세요.
-3.  **예측 불가능성**: 모든 패널이 예측 가능한 결론("결국은 균형이 중요합니다")으로 쉽게 수렴하지 않도록, 자신의 주장을 끝까지 고수하거나, 예상치 못한 논리를 펼치는 캐릭터를 포함해주세요.
-
-## 🚨 중요: 관점과 토론스타일 구분 원칙
-- **관점**에는 주장, 입장, 논리만 포함하고 말투나 언어스타일은 절대 포함하지 마세요
-- **토론스타일**에는 말투, 언어패턴, 표현방식만 포함하고 주장내용은 절대 포함하지 마세요
-- 두 항목을 명확히 분리해서 작성하는 것이 핵심입니다
-
-## 생성 형식 (아래 형식을 반드시 준수해주세요)
-1.  전문가 이름: [이름]
-    직업과 소속: [구체적인 직업과 소속]
-    배경: [그의 주장을 뒷받침하는 구체적인 개인적 경험, 연구 이력, 저서 등 (예: 20년간 성별 뇌 구조 차이를 연구해온 권위자. 저서 '남성의 뇌, 여성의 뇌'가 베스트셀러가 됨)]
-    관점: [토론 주제에 대한 핵심 주장, 논리, 및 입장만 기술. 언어 스타일은 포함하지 말 것 (예: "뇌 구조의 차이가 역할 분담의 핵심 근거라고 주장. fMRI 연구 데이터를 활용하며, 과학적 증거를 중시")]
-    토론스타일: [말투와 언어 패턴만 기술. 주장 내용은 포함하지 말 것 (예: "논리적이고 데이터 중심적. '연구에 따르면...', '객관적 수치로 보면...' 등의 학술적 표현을 자주 사용. 감정보다 사실에 기반한 차분한 어조")]
-
-2.  전문가 이름: ... (반복)
-
-(총 {self.panel_size}명)
-"""
-        
-        try:
-            import openai
-            
-            client = openai.OpenAI(api_key=self.api_key)
-            
-            print(f"\n{Fore.YELLOW}🤖 전문가 패널을 생성하고 있습니다...{Style.RESET_ALL}")
-            
-            # 타이핑 속도 가져오기
-            typing_speed = get_typing_speed(self.config)
-            
-            if typing_speed > 0:
-                # 스트리밍으로 페르소나 생성 과정 출력
-                result = stream_openai_response(
-                    client=client,
-                    model=self.config['ai']['model'],
-                    messages=[
-                        {"role": "system", "content": self._create_system_prompt()},
-                        {"role": "user", "content": persona_prompt}
-                    ],
-                    max_tokens=self._get_max_tokens('persona_generation'),
-                    temperature=self.config['ai']['temperature'],
-                    color=Fore.CYAN,
-                    typing_speed=typing_speed
-                )
-            else:
-                # 즉시 출력 모드
-                response = client.chat.completions.create(
-                    model=self.config['ai']['model'],
-                    messages=[
-                        {"role": "system", "content": self._create_system_prompt()},
-                        {"role": "user", "content": persona_prompt}
-                    ],
-                    max_tokens=self._get_max_tokens('persona_generation'),
-                    temperature=self.config['ai']['temperature']
-                )
-                result = response.choices[0].message.content
-                print(f"{Fore.CYAN}{result}{Style.RESET_ALL}")
-            
-            # 디버깅을 위해 AI 응답 로그 출력
-            self.logger.info(f"AI 페르소나 생성 응답: {result}")
-            
-            # 응답 파싱하여 전문가 정보 추출
-            personas = self._parse_expert_personas(result)
-            self.logger.info(f"{len(personas)}명의 전문가 페르소나 생성 완료")
-            
-            return personas
-            
-        except Exception as e:
-            self.logger.error(f"전문가 페르소나 생성 실패: {e}")
-            self.logger.info("기본 페르소나를 사용합니다.")
-            default_personas = self._get_default_personas()
-            self.logger.info(f"기본 페르소나 {len(default_personas)}명 로드 완료")
-            return default_personas
-    
-    def _parse_expert_personas(self, response: str) -> List[Dict[str, str]]:
-        """AI 응답에서 전문가 정보 파싱 (개선된 버전)"""
-        personas = []
-        
-        # 디버깅을 위한 로그
-        self.logger.info(f"파싱 시작. 응답 길이: {len(response)}")
-        
-        try:
-            # 다양한 형식에 대응하는 유연한 파싱
-            lines = response.split('\n')
-            current_expert = {}
-            
-            for i, line in enumerate(lines):
-                line = line.strip()
-                
-                # 전문가 이름 찾기 (다양한 형식 지원)
-                if '전문가 이름' in line and ':' in line:
-                    # 이전 전문가 정보가 있으면 저장
-                    if current_expert and 'name' in current_expert:
-                        self._finalize_expert(current_expert)
-                        personas.append(current_expert)
-                    
-                    # 새 전문가 시작
-                    current_expert = {}
-                    name_part = line.split(':', 1)[-1].strip()
-                    name_part = name_part.replace('**', '').replace('[', '').replace(']', '').strip()
-                    current_expert['name'] = name_part.replace(' ', '')
-                
-                # 전문분야 정보
-                elif '직업과 소속' in line and ':' in line:
-                    expertise_part = line.split(':', 1)[-1].strip()
-                    expertise_part = expertise_part.replace('**', '').replace('[', '').replace(']', '').strip()
-                    current_expert['expertise'] = expertise_part
-                
-                # 배경
-                elif '배경' in line and ':' in line:
-                    background_part = line.split(':', 1)[-1].strip()
-                    background_part = background_part.replace('**', '').replace('[', '').replace(']', '').strip()
-                    current_expert['background'] = background_part
-                
-                # 관점
-                elif '관점' in line and ':' in line:
-                    perspective_part = line.split(':', 1)[-1].strip()
-                    perspective_part = perspective_part.replace('**', '').replace('[', '').replace(']', '').strip()
-                    current_expert['perspective'] = perspective_part
-                
-                # 토론 스타일
-                elif '토론스타일' in line and ':' in line:
-                    debate_style_part = line.split(':', 1)[-1].strip()
-                    debate_style_part = debate_style_part.replace('**', '').replace('[', '').replace(']', '').strip()
-                    current_expert['debate_style'] = debate_style_part
-            
-            # 마지막 전문가 정보 저장
-            if current_expert and 'name' in current_expert:
-                self._finalize_expert(current_expert)
-                personas.append(current_expert)
-            
-            self.logger.info(f"파싱 완료. {len(personas)}명의 전문가 추출됨")
-            
-            # 최소한의 전문가가 없으면 기본 페르소나 사용
-            if len(personas) == 0:
-                self.logger.warning("파싱된 전문가가 없음. 기본 페르소나 사용")
-                return self._get_default_personas()
-            
-            return personas[:self.panel_size]
-            
-        except Exception as e:
-            self.logger.error(f"파싱 중 오류 발생: {e}")
-            return self._get_default_personas()
-    
-    def _finalize_expert(self, expert: Dict[str, str]) -> None:
-        """전문가 정보 최종 처리"""
-        expert.setdefault('expertise', '전문가')
-        expert.setdefault('background', '해당 분야의 경험이 풍부한 전문가')
-        expert.setdefault('perspective', '균형잡힌 관점으로 토론에 참여')
-        expert.setdefault('debate_style', '논리적이고 차분한 어조로 근거를 바탕으로 의견을 제시하는 스타일')
-    
-    def _get_default_personas(self) -> List[Dict[str, str]]:
-        """기본 전문가 페르소나"""
-        return [
-            {
-                "name": "김철수",
-                "expertise": "신경과학자, 서울대 의대 교수",
-                "background": "15년간 성별 뇌 구조 차이 연구, 국제학술지 100편 이상 발표, 저서 '남성의 뇌, 여성의 뇌' 베스트셀러",
-                "perspective": "남녀 뇌의 구조적 차이는 과학적 사실이며, 이는 교육 방식에 반영되어야 한다는 입장. fMRI, DTI 등 뇌영상 연구 데이터를 근거로 논증한다.",
-                "debate_style": "논리적이고 데이터 중심적인 스타일. '연구에 따르면...', '통계적으로 유의한...' 등의 학술적 표현을 자주 사용하며, 차분하고 객관적인 어조로 과학적 근거를 제시한다."
-            },
-            {
-                "name": "박미영",
-                "expertise": "교육심리학자, 이화여대 교육학과 교수",
-                "background": "20년간 성별 교육 격차 연구, UNESCO 교육 평등 자문위원, 여성 교육 정책 전문가",
-                "perspective": "성별 차이보다 개인차가 크며, 성별 분리 교육은 고정관념을 강화한다고 주장. 교육현장 데이터와 국제비교연구를 통해 반박한다.",
-                "debate_style": "따뜻하면서도 논리적인 설득형 스타일. '제가 만난 학생들을 보면...', '실제 교육현장에서는...' 등 현장 사례를 자주 인용하며, 공감과 데이터를 함께 활용하는 균형잡힌 어조를 사용한다."
-            },
-            {
-                "name": "이준호",
-                "expertise": "진화심리학자, 연세대 심리학과 교수",
-                "background": "진화적 관점에서 성별 차이 연구 10년, 하버드 방문연구원 경력, 다수의 국제 공동연구 참여",
-                "perspective": "진화적 관점에서 성별 차이는 적응적 의미가 있으며, 교육에서도 고려되어야 한다고 본다. 진화심리학 이론과 문화간 비교연구를 활용한다.",
-                "debate_style": "철학적이고 거시적인 관점의 사색형 스타일. '인류 진화사를 보면...', '생존과 번식의 관점에서...' 등 넓은 시각의 표현을 사용하며, 깊이 있고 성찰적인 어조로 발언한다."
-            },
-            {
-                "name": "최소연",
-                "expertise": "젠더학자, 성공회대 민주자유전공 교수",
-                "background": "젠더 이론과 교육 불평등 연구 12년, 시민단체 활동 경력, 성평등 정책 자문",
-                "perspective": "생물학적 결정론은 위험하며, 성별 분리 교육은 사회적 차별을 재생산한다는 관점. 젠더 이론과 사회구조적 분석, 역사적 사례를 활용한다.",
-                "debate_style": "비판적이고 열정적인 성찰형 스타일. '그것은 전형적인 생물학적 환원주의입니다', '우리는 질문해야 합니다' 등 기존 관념에 도전하는 표현을 사용하며, 강한 확신과 열정적인 어조로 의견을 제시한다."
-            }
-        ]
-    
-    def create_panel_agents(self, personas: List[Dict[str, str]]) -> None:
-        """패널 에이전트들 생성"""
-        self.panel_agents = []
-        
-        if self.show_debug_info:
-            print(f"\n{Fore.CYAN}🔧 DEBUG: Panel Agents System Prompts{Style.RESET_ALL}")
-        
-        for i, persona in enumerate(personas, 1):
-            agent = PanelAgent(
-                name=persona['name'],
-                expertise=persona['expertise'],
-                background=persona['background'],
-                perspective=persona['perspective'],
-                debate_style=persona['debate_style'],
-                config=self.config,
-                api_key=self.api_key
-            )
-            self.panel_agents.append(agent)
-            
-            # 디버그 정보 출력
-            if self.show_debug_info:
-                print(f"\n{Fore.GREEN}📋 Panel {i}: {persona['name']}{Style.RESET_ALL}")
-                print("-" * 80)
-                print(f"{Fore.YELLOW}{agent.system_prompt}{Style.RESET_ALL}")
-                print("-" * 80)
-        
-        self.logger.info(f"{len(self.panel_agents)}명의 패널 에이전트 생성 완료")
-    
-    def _add_user_as_panelist(self) -> None:
-        """사용자를 패널리스트로 추가"""
-        user_participant = PanelHuman(self.user_name, self.user_expertise)
-        
-        # 랜덤한 위치에 사용자 삽입 (첫 번째나 마지막이 아닌 중간 위치)
-        import random
-        if len(self.panel_agents) > 1:
-            # 1번째와 마지막 사이의 랜덤 위치
-            insert_position = random.randint(1, len(self.panel_agents))
-        else:
-            # 패널이 1명이면 마지막에 추가
-            insert_position = len(self.panel_agents)
-        
-        self.panel_agents.insert(insert_position, user_participant)
-        self.logger.info(f"사용자 '{self.user_name}'을 {insert_position + 1}번째 패널로 추가")
-    
-    def generate_topic_briefing(self, topic: str) -> str:
-        """토론 주제에 대한 배경 브리핑 생성"""
-        briefing_prompt = f"""
-토론 주제: {topic}
-
-당신은 전문적인 토론 진행자입니다. 위 토론 주제에 대해 시청자들이 쉽게 이해할 수 있도록 2-3분 분량의 간결한 브리핑을 작성해주세요.
-
-다음 내용을 포함해주세요:
-1. 이 주제가 왜 중요하고 논란이 되는지
-2. 현재 사회적 배경과 맥락
-3. 주요 쟁점들과 대립되는 관점들
-4. 이 토론이 우리에게 왜 의미가 있는지
-
-브리핑은 "[토론 진행자]"로 시작하여 친근하면서도 전문적인 톤으로 작성해주세요.
-"""
-        
-        try:
-            import openai
-            
-            client = openai.OpenAI(api_key=self.api_key)
-            
-            # 타이핑 속도 가져오기
-            typing_speed = get_typing_speed(self.config)
-            
-            if typing_speed > 0:
-                # 스트리밍으로 브리핑 생성
-                result = stream_openai_response(
-                    client=client,
-                    model=self.config['ai']['model'],
-                    messages=[
-                        {"role": "system", "content": self._create_system_prompt()},
-                        {"role": "user", "content": briefing_prompt}
-                    ],
-                    max_tokens=self.config['ai']['max_tokens'],
-                    temperature=self.config['ai']['temperature'],
-                    color=Fore.MAGENTA,
-                    typing_speed=typing_speed
-                )
-            else:
-                # 즉시 출력 모드
-                response = client.chat.completions.create(
-                    model=self.config['ai']['model'],
-                    messages=[
-                        {"role": "system", "content": self._create_system_prompt()},
-                        {"role": "user", "content": briefing_prompt}
-                    ],
-                    max_tokens=self.config['ai']['max_tokens'],
-                    temperature=self.config['ai']['temperature']
-                )
-                result = response.choices[0].message.content
-                print(f"{Fore.MAGENTA}{result}{Style.RESET_ALL}")
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"주제 브리핑 생성 실패: {e}")
-            return f"[토론 진행자] 오늘 우리가 다룰 주제는 '{topic}'입니다. 이는 현대 사회에서 중요한 논의가 필요한 주제로, 다양한 관점에서 심도 있게 살펴볼 필요가 있습니다."
-    
-    def display_personas(self, personas: List[Dict[str, str]]) -> None:
-        """생성된 페르소나를 출력"""
-        print(f"\n{Fore.CYAN}👥 생성된 전문가 패널{Style.RESET_ALL}")
-        print("=" * 80)
-        
-        for i, persona in enumerate(personas, 1):
-            print(f"\n{Fore.GREEN}📋 전문가 {i}: {persona['name']}{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}🏢 직업과 소속:{Style.RESET_ALL} {persona['expertise']}")
-            print(f"{Fore.YELLOW}📚 배경:{Style.RESET_ALL} {persona['background']}")
-            print(f"{Fore.YELLOW}💭 핵심 관점:{Style.RESET_ALL} {persona['perspective']}")
-            print(f"{Fore.YELLOW}🎭 토론 스타일:{Style.RESET_ALL} {persona['debate_style']}")
-            print("-" * 80)
+    def create_panel_agents(self, topic: str) -> List[Panel]:
+        """주제부터 시작해서 패널 생성까지 완료 (PanelGenerator로 위임)"""
+        return self.panel_generator.create_panel_agents(topic, self.panel_size, self._create_system_prompt())
     
     def ask_user_confirmation(self) -> bool:
-        """사용자에게 토론 진행 여부를 묻기"""
-        print(f"\n{Fore.CYAN}🤔 위 패널로 토론을 진행하시겠습니까?{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}[y/Y] 예, 토론을 시작합니다{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}[n/N] 아니오, 토론을 종료합니다{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}[r/R] 페르소나를 다시 생성합니다{Style.RESET_ALL}")
-        
-        while True:
-            choice = input(f"\n{Fore.CYAN}선택하세요 (y/n/r): {Style.RESET_ALL}").strip().lower()
-            if choice in ['y', 'yes']:
-                return True
-            elif choice in ['n', 'no']:
-                print(f"{Fore.RED}토론을 종료합니다.{Style.RESET_ALL}")
-                return False
-            elif choice in ['r', 'regenerate']:
-                return None  # 재생성 신호
-            else:
-                print(f"{Fore.RED}올바른 선택지를 입력해주세요 (y/n/r){Style.RESET_ALL}")
+        """사용자에게 토론 진행 여부를 묻기 (DebatePresenter로 위임)"""
+        return self.presenter.ask_user_confirmation()
     
     def start_debate(self, topic: str, user_participation: bool = False) -> None:
-        """토론 시작"""
+        """토론 시작 (메인 오케스트레이터)"""
         self.user_participation = user_participation
         
         # 콘솔 출력 캡처 시작
@@ -509,64 +149,76 @@ class DebateManager:
         
         # 사용자 참여시 패널 수 조정 및 사용자 정보 입력
         if user_participation:
-            self.panel_size = 3  # AI 패널 3명
-            
-            # 사용자 이름 입력
-            self.user_name = input(f"\n{Fore.GREEN}토론에서 사용할 이름을 입력해주세요: {Style.RESET_ALL}").strip()
-            if not self.user_name:
-                self.user_name = "참여자"
-            
-            # 사용자 전문성/배경 입력
-            print(f"\n{Fore.CYAN}💡 토론에서 어떤 입장으로 참여하시겠습니까?{Style.RESET_ALL}")
-            print("예시: 직장인, 대학생, 개인투자자, 경제학 전공자, 금융업 종사자, 창업가 등")
-            
-            self.user_expertise = input(f"\n{Fore.GREEN}귀하의 배경이나 전문분야를 입력해주세요: {Style.RESET_ALL}").strip()
-            if not self.user_expertise:
-                self.user_expertise = "시민 참여자"
-            
-            print(f"\n{Fore.YELLOW}환영합니다, {self.user_name}님! ({self.user_expertise})으로 토론에 참여하게 됩니다.{Style.RESET_ALL}")
+            self._handle_user_participation()
         
         while True:
-            print(f"\n{Fore.BLUE}🔍 주제 분석 및 전문가 패널 구성 중...{Style.RESET_ALL}")
+            self.presenter.display_progress_message("🔍 주제 분석 및 전문가 패널 구성 중...")
             
-            # 1. 전문가 페르소나 생성
-            personas = self.create_expert_personas(topic)
+            # 1. 패널 에이전트 생성 (페르소나 생성부터 에이전트 생성까지 한 번에)
+            self.panel_agents = self.create_panel_agents(topic)
             
-            # 2. 설정에 따라 페르소나 미리보기 및 사용자 확인
+            # 2. 설정에 따라 사용자 확인 (페르소나 미리보기는 제거)
             if self.show_debug_info:
-                self.display_personas(personas)
+                # 패널 정보 출력
+                self.presenter.display_panel_debug_info(self.panel_agents)
                 user_choice = self.ask_user_confirmation()
                 
                 if user_choice is None:  # 재생성 요청
-                    print(f"\n{Fore.YELLOW}🔄 페르소나를 다시 생성합니다...{Style.RESET_ALL}")
+                    self.presenter.display_regeneration_message()
                     continue
                 elif not user_choice:  # 종료 요청
                     return
                 # user_choice가 True면 토론 진행
             
-            # 3. 패널 에이전트 생성
-            self.create_panel_agents(personas)
-            
-            # 3-1. 사용자 참여시 사용자 정보 추가
+            # 3. 사용자 참여시 사용자 정보 추가
             if self.user_participation:
-                self._add_user_as_panelist()
+                self.panel_agents = self.orchestrator.add_user_as_panelist(
+                    self.panel_agents, self.user_name, self.user_expertise
+                )
             
             # 4. 토론 방식 안내
-            self._announce_debate_format(topic)
+            self.orchestrator.announce_debate_format(
+                topic, self.duration_minutes, self.panel_agents, 
+                self.user_participation, self.user_name, self.user_expertise, 
+                self._create_system_prompt()
+            )
             
             # 5. 패널 소개
-            self._introduce_panels()
+            self.orchestrator.introduce_panels(self.panel_agents)
             
             # 6. 토론 진행
-            self._conduct_debate(topic)
+            self.orchestrator.conduct_debate(topic, self.panel_agents)
             
             # 7. 토론 마무리
-            self._conclude_debate(topic)
+            self.orchestrator.conclude_debate(topic, self.panel_agents, self._create_system_prompt())
             
             # 토론이 완료되면 루프 종료
             break
         
         # 토론 완료 후 마크다운 파일로 저장
+        self._save_debate_results(topic)
+    
+    def _handle_user_participation(self) -> None:
+        """사용자 참여 처리"""
+        self.panel_size = 3  # AI 패널 3명
+        
+        # 사용자 이름 입력
+        self.user_name = self.presenter.get_user_input("토론에서 사용할 이름을 입력해주세요: ")
+        if not self.user_name:
+            self.user_name = "참여자"
+        
+        # 사용자 전문성/배경 입력
+        print(f"\n{Fore.CYAN}💡 토론에서 어떤 입장으로 참여하시겠습니까?{Style.RESET_ALL}")
+        print("예시: 직장인, 대학생, 개인투자자, 경제학 전공자, 금융업 종사자, 창업가 등")
+        
+        self.user_expertise = self.presenter.get_user_input("귀하의 배경이나 전문분야를 입력해주세요: ")
+        if not self.user_expertise:
+            self.user_expertise = "시민 참여자"
+        
+        self.presenter.display_welcome_message(self.user_name, self.user_expertise)
+    
+    def _save_debate_results(self, topic: str) -> None:
+        """토론 결과 저장"""
         try:
             # 출력 캡처 중지
             self.console_capture.stop_capture()
@@ -574,310 +226,8 @@ class DebateManager:
             # 마크다운 파일로 저장
             saved_file = self.console_capture.save_to_markdown(topic)
             
-            print(f"\n{Fore.GREEN}💾 토론 내용이 저장되었습니다:{Style.RESET_ALL}")
-            print(f"   파일: {saved_file}")
-            print(f"   경로: {os.path.abspath(saved_file)}")
+            self.presenter.display_save_result(saved_file, os.path.abspath(saved_file))
             
         except Exception as e:
-            print(f"\n{Fore.YELLOW}⚠️ 토론 내용 저장 중 오류가 발생했습니다: {e}{Style.RESET_ALL}")
+            self.presenter.display_save_error(str(e))
             self.logger.error(f"마크다운 파일 저장 실패: {e}")
-    
-    def _announce_debate_format(self, topic: str) -> None:
-        """토론 방식 안내"""
-        print(f"\n{Fore.CYAN}📋 토론 진행 방식{Style.RESET_ALL}")
-        print(f"주제: {Fore.YELLOW}{topic}{Style.RESET_ALL}")
-        print(f"방식: 패널토론")
-        print(f"시간: 약 {self.duration_minutes}분")
-        
-        if self.user_participation:
-            print(f"참여자: {len(self.panel_agents)}명의 전문가 패널 (AI 전문가 {len(self.panel_agents)-1}명 + {self.user_name}님({self.user_expertise}))")
-        else:
-            print(f"참여자: {len(self.panel_agents)}명의 전문가 패널")
-        
-        print(f"진행: 순차 발언 → 상호 토론 → 최종 의견")
-        
-        # 주제 브리핑 생성 및 출력
-        print(f"\n{Fore.CYAN}📰 주제 브리핑{Style.RESET_ALL}")
-        print()  # 줄바꿈
-        briefing = self.generate_topic_briefing(topic)  # 스트리밍으로 출력됨
-        
-        # 매니저의 시작 발언
-        start_message = self._generate_manager_message("토론 시작", f"주제: {topic}")
-        print(f"\n{Fore.MAGENTA}[토론 진행자] {start_message}{Style.RESET_ALL}")
-    
-    def _introduce_panels(self) -> None:
-        """패널 소개"""
-        print(f"\n{Fore.CYAN}👥 패널 소개{Style.RESET_ALL}")
-        
-        # 매니저의 소개 발언
-        intro_message = self._generate_manager_message("패널 소개", "")
-        print(f"\n{Fore.MAGENTA}[토론 진행자] {intro_message}{Style.RESET_ALL}")
-        
-        for i, agent in enumerate(self.panel_agents, 1):
-            if agent.is_human:
-                # 사용자 소개는 기존 방식 유지
-                intro = agent.introduce()
-                print(f"\n{Fore.CYAN}{intro}{Style.RESET_ALL}")
-            else:
-                # AI 패널은 스트리밍 출력 (get_response에서 이미 출력됨)
-                print()  # 줄바꿈
-                intro = agent.introduce()
-            
-            # 다음 패널 소개 전 매니저 발언
-            if i < len(self.panel_agents):
-                transition_message = self._generate_manager_message("패널 전환", f"{agent.name} 패널의 소개가 끝났습니다. 다음 패널을 소개하겠습니다.")
-                print(f"\n{Fore.MAGENTA}[토론 진행자] {transition_message}{Style.RESET_ALL}")
-            
-            # 사용자가 아닌 경우만 대기
-            if not agent.is_human:
-                time.sleep(1)
-    
-    def _conduct_debate(self, topic: str) -> None:
-        """토론 진행"""
-        print(f"\n{Fore.CYAN}🎭 토론 시작{Style.RESET_ALL}")
-        
-        # 매니저의 토론 시작 발언
-        debate_start_message = self._generate_manager_message("토론 시작", f"주제: {topic} - 본격적인 토론을 시작하겠습니다.")
-        print(f"\n{Fore.MAGENTA}[토론 진행자] {debate_start_message}{Style.RESET_ALL}")
-        
-        # 모든 패널 발언을 저장할 인스턴스 변수로 변경
-        self.all_statements = []
-        
-        # 1단계: 초기 의견 발표
-        print(f"\n{Fore.MAGENTA}📢 1단계: 초기 의견 발표{Style.RESET_ALL}")
-        
-        # 매니저의 1단계 안내
-        stage1_message = self._generate_manager_message("단계 안내", "첫 번째 단계로 각 패널의 초기 의견을 들어보겠습니다.")
-        print(f"\n{Fore.MAGENTA}[토론 진행자] {stage1_message}{Style.RESET_ALL}")
-        
-        for i, agent in enumerate(self.panel_agents, 1):
-            # 발언권 넘김
-            turn_message = self._generate_manager_message("발언권 넘김", f"패널 이름: {agent.name} - 첫 번째 의견을 말씀해 주시기 바랍니다.")
-            print(f"\n{Fore.MAGENTA}[토론 진행자] {turn_message}{Style.RESET_ALL}")
-            
-            if agent.is_human:
-                # 사용자 응답은 기존 방식 유지
-                response = agent.respond_to_topic(topic)
-                print(f"\n{Fore.CYAN}{response}{Style.RESET_ALL}")
-            else:
-                # AI 패널은 스트리밍 출력 (get_response에서 이미 출력됨)
-                print()  # 줄바꿈
-                response = agent.respond_to_topic(topic)
-            
-            self.all_statements.append({
-                'agent_name': agent.name,
-                'stage': '초기 의견',
-                'content': response
-            })
-            
-            # 다음 발언자 안내 (마지막 패널이 아닌 경우에만)
-            if i < len(self.panel_agents):
-                next_message = self._generate_manager_message("다음 발언자", f"감사합니다. 이제 다음 패널의 의견을 들어보겠습니다.")
-                print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")
-            
-            # 사용자가 아닌 경우만 대기
-            if not agent.is_human:
-                time.sleep(2)
-        
-        # 2단계: 상호 토론
-        print(f"\n{Fore.MAGENTA}📢 2단계: 상호 토론{Style.RESET_ALL}")
-        
-        # 매니저의 2단계 안내
-        stage2_message = self._generate_manager_message("단계 전환", "이제 두 번째 단계로 상호 토론을 진행하겠습니다. 각 패널이 다른 의견에 대한 반응과 추가 의견을 말씀해 주시기 바랍니다.")
-        print(f"\n{Fore.MAGENTA}[토론 진행자] {stage2_message}{Style.RESET_ALL}")
-        
-        for turn in range(self.max_turns - 1):
-            print(f"\n{Fore.BLUE}--- 토론 라운드 {turn + 1} ---{Style.RESET_ALL}")
-            
-            # 라운드 시작 안내
-            round_message = self._generate_manager_message("라운드 시작", f"토론 라운드 {turn + 1}을 시작하겠습니다.")
-            print(f"\n{Fore.MAGENTA}[토론 진행자] {round_message}{Style.RESET_ALL}")
-            
-            for i, agent in enumerate(self.panel_agents, 1):
-                # 발언권 넘김
-                turn_message = self._generate_manager_message("발언권 넘김", f"패널 이름: {agent.name} - 이번 라운드의 의견을 말씀해 주시기 바랍니다.")
-                print(f"\n{Fore.MAGENTA}[토론 진행자] {turn_message}{Style.RESET_ALL}")
-                
-                context = f"토론 라운드 {turn + 1}"
-                # respond_to_debate를 위해 기존 statements 형태 유지
-                statements = [stmt['content'] for stmt in self.all_statements]
-                
-                if agent.is_human:
-                    # 사용자 응답은 기존 방식 유지
-                    response = agent.respond_to_debate(context, statements)
-                    print(f"\n{Fore.CYAN}{response}{Style.RESET_ALL}")
-                else:
-                    # AI 패널은 스트리밍 출력 (get_response에서 이미 출력됨)
-                    print()  # 줄바꿈
-                    response = agent.respond_to_debate(context, statements)
-                
-                self.all_statements.append({
-                    'agent_name': agent.name,
-                    'stage': f'토론 라운드 {turn + 1}',
-                    'content': response
-                })
-                
-                # 다음 발언자 안내 (마지막 패널이 아닌 경우에만)
-                if i < len(self.panel_agents):
-                    next_message = self._generate_manager_message("다음 발언자", f"감사합니다. 다음 패널의 의견을 들어보겠습니다.")
-                    print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")
-                
-                # 사용자가 아닌 경우만 대기
-                if not agent.is_human:
-                    time.sleep(2)
-    
-    def _conclude_debate(self, topic: str) -> None:
-        """토론 마무리"""
-        print(f"\n{Fore.CYAN}📝 토론 마무리{Style.RESET_ALL}")
-        
-        # 매니저의 마무리 시작 발언
-        conclude_message = self._generate_manager_message("토론 마무리", "이제 토론을 마무리하는 시간입니다.")
-        print(f"\n{Fore.MAGENTA}[토론 진행자] {conclude_message}{Style.RESET_ALL}")
-        
-        # 토론 요약 생성
-        summary = self._generate_debate_summary(topic)
-        
-        print(f"\n{Fore.MAGENTA}📢 최종 의견{Style.RESET_ALL}")
-        
-        # 매니저의 최종 의견 안내
-        final_message = self._generate_manager_message("최종 의견 안내", "이제 각 패널의 최종 의견을 들어보겠습니다.")
-        print(f"\n{Fore.MAGENTA}[토론 진행자] {final_message}{Style.RESET_ALL}")
-        
-        for i, agent in enumerate(self.panel_agents, 1):
-            # 발언권 넘김
-            turn_message = self._generate_manager_message("발언권 넘김", f"패널 이름: {agent.name} - 최종 의견을 말씀해 주시기 바랍니다.")
-            print(f"\n{Fore.MAGENTA}[토론 진행자] {turn_message}{Style.RESET_ALL}")
-            
-            # 현재 패널 제외한 다른 패널들의 발언 수집
-            other_panels_statements = [
-                stmt for stmt in self.all_statements 
-                if stmt['agent_name'] != agent.name
-            ]
-            
-            # 모든 패널에 동일한 인터페이스 사용 (시그니처 통일됨)
-            if agent.is_human:
-                # 사용자 응답은 기존 방식 유지
-                final_response = agent.final_statement(topic, summary, other_panels_statements)
-                print(f"\n{Fore.CYAN}{final_response}{Style.RESET_ALL}")
-            else:
-                # AI 패널은 스트리밍 출력 (get_response에서 이미 출력됨)
-                print()  # 줄바꿈
-                final_response = agent.final_statement(topic, summary, other_panels_statements)
-            
-            # 다음 발언자 안내 (마지막 패널이 아닌 경우에만)
-            if i < len(self.panel_agents):
-                next_message = self._generate_manager_message("다음 발언자", f"감사합니다. 다음 패널의 최종 의견을 들어보겠습니다.")
-                print(f"\n{Fore.MAGENTA}[토론 진행자] {next_message}{Style.RESET_ALL}")
-            
-            # 사용자가 아닌 경우만 대기
-            if not agent.is_human:
-                time.sleep(2)
-        
-        # 최종 결론
-        print(f"\n{Fore.CYAN}🎯 토론 결론{Style.RESET_ALL}")
-        
-        # 매니저의 결론 안내
-        conclusion_message = self._generate_manager_message("결론 안내", "이제 토론의 종합적인 결론을 말씀드리겠습니다.")
-        print(f"\n{Fore.MAGENTA}[토론 진행자] {conclusion_message}{Style.RESET_ALL}")
-        
-        print()  # 줄바꿈
-        conclusion = self._generate_conclusion(topic, summary)  # 스트리밍으로 출력됨
-        
-        # 매니저의 마무리 인사
-        closing_message = self._generate_manager_message("마무리 인사", "오늘 토론에 참여해 주신 모든 패널께 감사드립니다. 토론을 마칩니다.")
-        print(f"\n{Fore.MAGENTA}[토론 진행자] {closing_message}{Style.RESET_ALL}")
-    
-    def _generate_debate_summary(self, topic: str) -> str:
-        """토론 요약 생성"""
-        summary_prompt = f"""
-토론 주제: {topic}
-
-지금까지 진행된 토론의 주요 쟁점과 각 패널의 핵심 의견을 요약해주세요.
-"""
-        
-        try:
-            import openai
-            
-            client = openai.OpenAI(api_key=self.api_key)
-            
-            # 스트리밍으로 요약 생성 (출력 없이 생성만)
-            response = client.chat.completions.create(
-                model=self.config['ai']['model'],
-                messages=[
-                    {"role": "system", "content": self._create_system_prompt()},
-                    {"role": "user", "content": summary_prompt}
-                ],
-                max_tokens=self.config['ai']['max_tokens'],
-                temperature=self.config['ai']['temperature']
-            )
-            
-            return response.choices[0].message.content
-        except Exception as e:
-            self.logger.error(f"토론 요약 생성 실패: {e}")
-            return "토론 요약을 생성할 수 없습니다."
-    
-    def _generate_conclusion(self, topic: str, summary: str) -> str:
-        """최종 결론 생성"""
-        # 실제 참여한 패널 정보 구성
-        panel_info = ""
-        for i, agent in enumerate(self.panel_agents, 1):
-            panel_info += f"- **{agent.name}** ({agent.expertise}): {agent.perspective}\n"
-        
-        conclusion_prompt = f"""
-토론 주제: {topic}
-
-참여 패널:
-{panel_info}
-
-토론 요약: {summary}
-
-위 {len(self.panel_agents)}명의 패널이 참여한 토론을 마무리하며 다음을 포함한 종합적인 결론을 제시해주세요:
-
-1. **주요 합의점**: 패널들이 공통으로 동의한 부분들
-2. **주요 차이점과 핵심 쟁점**: 각 패널의 서로 다른 관점과 핵심 대립점 (각 패널의 이름과 전문분야를 명시하여 구체적으로 기술)
-3. **향후 고려사항**: 토론에서 제기된 과제와 남은 질문들
-4. **균형잡힌 시각에서의 종합 의견**: 전체적인 결론과 시사점
-
-반드시 실제 참여한 모든 패널의 관점을 구체적으로 반영하여 작성해주세요.
-"""
-        
-        try:
-            import openai
-            
-            client = openai.OpenAI(api_key=self.api_key)
-            
-            # 타이핑 속도 가져오기
-            typing_speed = get_typing_speed(self.config)
-            
-            if typing_speed > 0:
-                # 스트리밍으로 결론 생성
-                result = stream_openai_response(
-                    client=client,
-                    model=self.config['ai']['model'],
-                    messages=[
-                        {"role": "system", "content": self._create_system_prompt()},
-                        {"role": "user", "content": conclusion_prompt}
-                    ],
-                    max_tokens=self._get_max_tokens('conclusion'),
-                    temperature=self.config['ai']['temperature'],
-                    color=Fore.CYAN,
-                    typing_speed=typing_speed
-                )
-            else:
-                # 즉시 출력 모드
-                response = client.chat.completions.create(
-                    model=self.config['ai']['model'],
-                    messages=[
-                        {"role": "system", "content": self._create_system_prompt()},
-                        {"role": "user", "content": conclusion_prompt}
-                    ],
-                    max_tokens=self._get_max_tokens('conclusion'),
-                    temperature=self.config['ai']['temperature']
-                )
-                result = response.choices[0].message.content
-                print(f"{Fore.CYAN}{result}{Style.RESET_ALL}")
-            
-            return result
-        except Exception as e:
-            self.logger.error(f"결론 생성 실패: {e}")
-            return "[토론 진행자] 토론을 마무리합니다. 감사합니다."

@@ -79,7 +79,7 @@ def load_config():
                             'max_tokens': 1500,
                             'token_multipliers': {
                                 'persona_generation': 2.0,
-                                'conclusion': 6.0
+                                'conclusion': 8.0
                             }
                         },
                         'output': {

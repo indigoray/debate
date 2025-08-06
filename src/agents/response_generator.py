@@ -253,7 +253,7 @@ JSON 형태로 답변:
                     {"role": "system", "content": "토론 분석 전문가로서 객관적으로 분석하세요."},
                     {"role": "user", "content": analysis_prompt}
                 ],
-                max_tokens=500,
+                max_tokens=self.config['ai']['max_tokens'],
                 temperature=0.3
             )
             
@@ -334,11 +334,13 @@ JSON 형태로 답변:
                     {"role": "system", "content": "전문적인 토론 진행자로서 상황에 맞는 적절한 개입을 하세요."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=300,
+                max_tokens=self.config['ai']['max_tokens'],
                 temperature=0.7
             )
             
             result = response.choices[0].message.content.strip()
+            
+          
             
             # "[토론 진행자]"가 없으면 추가
             if not result.startswith("[토론 진행자]"):

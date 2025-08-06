@@ -194,7 +194,7 @@ class DebateOrchestrator:
     def _conduct_normal_round(self, round_number: int, panel_agents: List, analysis: Dict[str, Any] = None) -> None:
         """일반적인 라운드 진행"""
         # 일반 라운드 헤더 출력
-        print(f"\n📝 === 일반 토론 라운드 {round_number} === 📝")
+        print(f"\n📝 === 라운드 {round_number}, 일반 토론 === 📝")
         print("💬 균형잡힌 토론을 이어갑니다")
         print("=" * 50)
         
@@ -253,7 +253,7 @@ class DebateOrchestrator:
     def _conduct_provoke_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
         """논쟁 유도 라운드"""
         # 특별 라운드 헤더 출력
-        print(f"\n🔥 === 논쟁 유도 라운드 {round_number} === 🔥")
+        print(f"\n🔥 === 라운드 {round_number}, 논쟁 유도 === 🔥")
         print("💥 패널 간 직접적인 반박과 논쟁을 유도합니다")
         print("=" * 50)
         
@@ -304,7 +304,7 @@ class DebateOrchestrator:
     def _conduct_clash_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
         """패널 간 직접 대결 라운드 - 진짜 1:1 대결"""
         # 특별 라운드 헤더 출력
-        print(f"\n⚔️  === 직접 대결 라운드 {round_number} === ⚔️")
+        print(f"\n⚔️  === 라운드 {round_number}, 직접 대결 === ⚔️")
         print("🥊 대립각이 큰 2명의 패널이 1:1로 직접 맞서서 토론합니다")
         print("=" * 60)
         
@@ -432,7 +432,7 @@ class DebateOrchestrator:
     def _conduct_angle_change_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
         """새로운 관점 제시 라운드"""
         # 특별 라운드 헤더 출력
-        print(f"\n🔄 === 새로운 관점 라운드 {round_number} === 🔄")
+        print(f"\n🔄 === 라운드 {round_number}, 새로운 관점 === 🔄")
         print("💡 토론의 시각을 바꿔서 새로운 관점을 도입합니다")
         print("=" * 50)
         
@@ -484,7 +484,7 @@ class DebateOrchestrator:
     def _conduct_evidence_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
         """근거 요구 라운드"""
         # 특별 라운드 헤더 출력
-        print(f"\n📋 === 근거 제시 라운드 {round_number} === 📋")
+        print(f"\n📋 === 라운드 {round_number}, 근거 제시 === 📋")
         print("🔍 구체적인 데이터와 근거를 요구하여 주장을 검증합니다")
         print("=" * 50)
         

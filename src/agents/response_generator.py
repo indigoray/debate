@@ -262,6 +262,96 @@ class ResponseGenerator:
         
         return message_templates.get(message_type, "진행하겠습니다.")
     
+    def analyze_manager_message(self, message: str, panel_agents: List) -> Dict[str, Any]:
+        """토론 진행자 메시지를 LLM으로 분석하여 지목된 패널들과 응답 방식 파악"""
+        panel_names = [agent.name for agent in panel_agents]
+        
+        analysis_prompt = f"""
+토론 진행자 메시지를 분석해주세요:
+
+메시지: {message}
+
+사용 가능한 패널: {panel_names}
+
+이 메시지를 분석하여 다음을 파악해주세요:
+
+1. **지목된 패널들**: 진행자가 구체적으로 이름을 언급하며 발언을 요청한 패널들의 이름 (여러 명일 수 있음)
+2. **응답 방식**: 
+   - "individual": 한 명의 패널만 응답
+   - "sequential": 여러 패널이 순차적으로 응답  
+   - "debate": 특정 패널들이 서로 논쟁하며 응답
+   - "free": 자유로운 토론 (특정 순서 없음)
+3. **응답 순서**: 지목된 패널들이 응답할 순서 (만약 순서가 명확하지 않으면 빈 배열)
+4. **1:1 대결 여부**: 두 명의 패널이 직접 맞서서 논쟁하는 상황인지
+5. **전체 지목 여부**: 모든 패널에게 발언을 요청하는지
+
+**분석 예시**:
+- "이윤정 패널, 박노식 패널이... 두 분 모두 상대방의 논리적 허점을 구체적으로 지적하며 논쟁해 주시기 바랍니다"
+  → targeted_panels: ["이윤정", "박노식"], response_type: "debate", is_clash: true
+- "김상훈 패널께서 먼저 말씀해주세요"  
+  → targeted_panels: ["김상훈"], response_type: "individual", is_clash: false
+- "모든 패널께서 의견을 말씀해주세요"
+  → targeted_panels: ["전체"], response_type: "free", is_all_panels: true
+
+JSON 형태로 답변:
+{{"targeted_panels": [...], "response_type": "...", "response_order": [...], "is_clash": false, "is_all_panels": false}}
+"""
+        
+        try:
+            import openai
+            import json
+            
+            client = openai.OpenAI(api_key=self.api_key)
+            
+            response = client.chat.completions.create(
+                model=self.config['ai']['model'],
+                messages=[
+                    {"role": "system", "content": "토론 진행자 메시지 분석 전문가로서 정확하게 분석하세요. 패널 이름은 정확히 매칭해야 합니다."},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                max_tokens=self._get_dynamic_max_tokens(),
+                temperature=0.1  # 정확성을 위해 낮은 temperature
+            )
+            
+            # JSON 파싱 시도
+            content = response.choices[0].message.content.strip()
+            
+            # JSON 부분만 추출
+            if '{' in content and '}' in content:
+                json_start = content.find('{')
+                json_end = content.rfind('}') + 1
+                json_content = content[json_start:json_end]
+                result = json.loads(json_content)
+            else:
+                raise ValueError("JSON 형식이 아님")
+            
+            # 패널 이름 검증 (실제 존재하는 패널인지 확인)
+            validated_panels = []
+            for panel_name in result.get("targeted_panels", []):
+                if panel_name in panel_names or panel_name == "전체":
+                    validated_panels.append(panel_name)
+            
+            result["targeted_panels"] = validated_panels
+            
+            # 디버그 모드에서만 LLM 분석 결과 출력
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🤖 [LLM 분석] 지목된 패널: {result.get('targeted_panels', [])}")
+                print(f"🤖 [LLM 분석] 응답 방식: {result.get('response_type', 'unknown')}")
+                if result.get('is_clash', False):
+                    print(f"🤖 [LLM 분석] 1:1 대결 감지됨")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"토론 진행자 메시지 분석 실패: {e}")
+            return {
+                "targeted_panels": [],
+                "response_type": "free",
+                "response_order": [],
+                "is_clash": False,
+                "is_all_panels": False
+            }
+
     def analyze_debate_state(self, topic: str, recent_statements: List[str], last_round_type: str = None, change_angle_cooldown: bool = False) -> Dict[str, Any]:
         """현재 토론 상태를 분석하여 다음 액션 결정 (Dynamic 모드용)"""
         analysis_prompt = f"""

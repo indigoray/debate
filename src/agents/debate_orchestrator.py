@@ -37,51 +37,7 @@ class DebateOrchestrator:
         # 토론 데이터
         self.all_statements = []
     
-    def _extract_targeted_panel_from_message(self, message: str, panel_agents: List) -> 'Panel':
-        """진행자 메시지에서 지목된 패널을 찾아 반환"""
-        print(f"🎯 [디버그] 패널 감지 시작 - 메시지: {message[:200]}...")
-        print(f"🎯 [디버그] 사용 가능한 패널: {[agent.name for agent in panel_agents]}")
-        
-        # 각 패널 이름에 대해 메시지에서 지목되었는지 확인
-        for agent in panel_agents:
-            # 다양한 호칭 패턴 확인 (더 포괄적으로)
-            patterns = [
-                f"{agent.name} 패널께서는",
-                f"{agent.name} 패널께서",
-                f"{agent.name} 패널께",
-                f"{agent.name} 패널은",
-                f"{agent.name} 패널이",
-                f"{agent.name} 패널을",
-                f"{agent.name} 패널에게",
-                f"{agent.name} 패널, ",
-                f"{agent.name} 패널의",
-                f"{agent.name} 님께서는",
-                f"{agent.name} 님께서",
-                f"{agent.name} 님은",
-                f"{agent.name} 님이",
-                f"{agent.name} 님을",
-                f"{agent.name} 님",
-                f"{agent.name}님께서는",
-                f"{agent.name}님께서",
-                f"{agent.name}님은",
-                f"{agent.name}님이",
-                f"{agent.name}님을",
-                f"{agent.name}님",
-                f"{agent.name}씨는",
-                f"{agent.name}씨가",
-                f"{agent.name}씨",
-                f"{agent.name} 씨는",
-                f"{agent.name} 씨가",
-                f"{agent.name} 씨"
-            ]
-            
-            for pattern in patterns:
-                if pattern in message:
-                    print(f"🎯 [디버그] ✅ 지목된 패널 감지: {agent.name} (패턴: '{pattern}')")
-                    return agent
-        
-        print(f"🎯 [디버그] ❌ 지목된 패널 없음")            
-        return None
+
     
     def announce_debate_format(self, topic: str, duration_minutes: int, panel_agents: List, user_participation: bool = False, user_name: str = None, user_expertise: str = None, system_prompt: str = None) -> None:
         """토론 방식 안내"""
@@ -323,48 +279,134 @@ class DebateOrchestrator:
         )
         self.presenter.display_manager_message(manager_message)
         
-        # 진행자 메시지에서 지목된 패널 찾기
-        targeted_panel = self._extract_targeted_panel_from_message(manager_message, panel_agents)
+        # 진행자 메시지를 LLM으로 분석하여 지목된 패널들과 응답 방식 파악
+        message_analysis = self.response_generator.analyze_manager_message(manager_message, panel_agents)
+        targeted_panel_names = message_analysis.get("targeted_panels", [])
+        response_type = message_analysis.get("response_type", "free")
+        is_clash = message_analysis.get("is_clash", False)
         
-        if targeted_panel:
-            print(f"🎯 [디버그] 지목된 패널 {targeted_panel.name}의 응답 대기 중...")
+        if not targeted_panel_names or "전체" in targeted_panel_names:
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] ❌ 구체적으로 지목된 패널이 없음 - 라운드 미완료로 처리")
+            return False  # 구체적으로 지목된 패널이 없으므로 라운드 미완료
+        
+        # 지목된 패널들을 실제 에이전트 객체로 변환
+        targeted_panels = []
+        for panel_name in targeted_panel_names:
+            for agent in panel_agents:
+                if agent.name == panel_name:
+                    targeted_panels.append(agent)
+                    break
+        
+        if not targeted_panels:
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] ❌ 지목된 패널을 찾을 수 없음 - 라운드 미완료로 처리")
+            return False
+        
+        if self.config['debate'].get('show_debug_info', False):
+            print(f"🎯 [LLM 분석] 지목된 패널들: {[p.name for p in targeted_panels]}")
+            print(f"🎯 [LLM 분석] 응답 방식: {response_type}")
+        
+        # 응답 방식에 따라 처리
+        if response_type == "debate" or is_clash:
+            # 논쟁 모드: 지목된 패널들이 서로 논쟁
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] 논쟁 모드로 진행 - {len(targeted_panels)}명 패널 간 논쟁")
             
-            # 지목된 패널의 응답 받기
+            for i, panel in enumerate(targeted_panels):
+                if i == 0:
+                    context = f"직접 반박 요청 - {analysis.get('main_issue', '핵심 쟁점')}"
+                else:
+                    context = f"논쟁 상대방 반박 - {targeted_panels[0].name} 패널에 대한 반박"
+                
+                statements = [stmt['content'] for stmt in self.all_statements]
+                
+                if panel.is_human:
+                    response = panel.respond_to_debate(context, statements)
+                    self.presenter.display_human_response(response)
+                else:
+                    self.presenter.display_line_break()
+                    response = panel.respond_to_debate(context, statements)
+                
+                self.all_statements.append({
+                    'agent_name': panel.name,
+                    'stage': f'논쟁 유도 라운드 {round_number}',
+                    'content': response
+                })
+                
+                if self.config['debate'].get('show_debug_info', False):
+                    print(f"🎯 [디버그] {panel.name} 패널 응답 완료")
+                
+                if not panel.is_human:
+                    time.sleep(2)
+        
+        elif response_type == "sequential":
+            # 순차 응답 모드: 지목된 패널들이 순서대로 응답
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] 순차 응답 모드로 진행 - {len(targeted_panels)}명 패널 순차 응답")
+            
+            for panel in targeted_panels:
+                context = f"직접 반박 요청 - {analysis.get('main_issue', '핵심 쟁점')}"
+                statements = [stmt['content'] for stmt in self.all_statements]
+                
+                if panel.is_human:
+                    response = panel.respond_to_debate(context, statements)
+                    self.presenter.display_human_response(response)
+                else:
+                    self.presenter.display_line_break()
+                    response = panel.respond_to_debate(context, statements)
+                
+                self.all_statements.append({
+                    'agent_name': panel.name,
+                    'stage': f'논쟁 유도 라운드 {round_number}',
+                    'content': response
+                })
+                
+                if self.config['debate'].get('show_debug_info', False):
+                    print(f"🎯 [디버그] {panel.name} 패널 응답 완료")
+                
+                if not panel.is_human:
+                    time.sleep(2)
+        
+        else:
+            # individual 또는 기타: 첫 번째 지목된 패널만 응답
+            panel = targeted_panels[0]
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] 개별 응답 모드로 진행 - {panel.name} 패널 단독 응답")
+            
             context = f"직접 반박 요청 - {analysis.get('main_issue', '핵심 쟁점')}"
             statements = [stmt['content'] for stmt in self.all_statements]
             
-            if targeted_panel.is_human:
-                response = targeted_panel.respond_to_debate(context, statements)
+            if panel.is_human:
+                response = panel.respond_to_debate(context, statements)
                 self.presenter.display_human_response(response)
             else:
                 self.presenter.display_line_break()
-                response = targeted_panel.respond_to_debate(context, statements)
+                response = panel.respond_to_debate(context, statements)
             
             self.all_statements.append({
-                'agent_name': targeted_panel.name,
+                'agent_name': panel.name,
                 'stage': f'논쟁 유도 라운드 {round_number}',
                 'content': response
             })
             
-            print(f"🎯 [디버그] {targeted_panel.name} 패널 응답 완료")
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] {panel.name} 패널 응답 완료")
             
-            if not targeted_panel.is_human:
+            if not panel.is_human:
                 time.sleep(2)
             
-            # 지목된 패널이 응답한 후, 다른 패널들도 추가 반응할 기회 제공
-            other_panels = [agent for agent in panel_agents if agent.name != targeted_panel.name]
-            
-            # 2명까지 추가 의견 (전체가 아닌 일부만)
+            # 개별 응답인 경우에만 다른 패널들의 추가 반응 기회 제공
+            other_panels = [agent for agent in panel_agents if agent.name != panel.name]
             selected_others = other_panels[:min(2, len(other_panels))]
             
             for i, agent in enumerate(selected_others):
-                # 추가 의견 요청
                 follow_up_msg = self.response_generator.generate_manager_message(
-                    "발언권 넘김", f"패널 이름: {agent.name} - 방금 {targeted_panel.name} 패널의 발언에 대한 의견이 있으시면 간단히 말씀해 주시기 바랍니다."
+                    "발언권 넘김", f"패널 이름: {agent.name} - 방금 {panel.name} 패널의 발언에 대한 의견이 있으시면 간단히 말씀해 주시기 바랍니다."
                 )
                 self.presenter.display_manager_message(follow_up_msg)
                 
-                context = f"추가 반응 - {targeted_panel.name} 패널 발언에 대한 의견"
+                context = f"추가 반응 - {panel.name} 패널 발언에 대한 의견"
                 statements = [stmt['content'] for stmt in self.all_statements]
                 
                 if agent.is_human:
@@ -382,11 +424,8 @@ class DebateOrchestrator:
                 
                 if not agent.is_human:
                     time.sleep(2)
-            
-            return True  # 지목된 패널이 응답했으므로 라운드 완료
-        else:
-            print(f"🎯 [디버그] ❌ 지목된 패널을 찾을 수 없음 - 라운드 미완료로 처리")
-            return False  # 지목된 패널이 없으므로 라운드 미완료
+        
+        return True  # 지목된 패널들이 응답했으므로 라운드 완료
     
     def _conduct_clash_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> bool:
         """패널 간 직접 대결 라운드 - 진짜 1:1 대결"""
@@ -592,48 +631,210 @@ class DebateOrchestrator:
         )
         self.presenter.display_manager_message(manager_message)
         
-        # 진행자 메시지에서 지목된 패널 찾기
-        targeted_panel = self._extract_targeted_panel_from_message(manager_message, panel_agents)
+        # 진행자 메시지를 LLM으로 분석하여 지목된 패널들과 응답 방식 파악
+        message_analysis = self.response_generator.analyze_manager_message(manager_message, panel_agents)
+        targeted_panel_names = message_analysis.get("targeted_panels", [])
+        response_type = message_analysis.get("response_type", "free")
+        is_clash = message_analysis.get("is_clash", False)
         
-        if targeted_panel:
-            print(f"🎯 [디버그] 지목된 패널 {targeted_panel.name}의 근거 제시 대기 중...")
+        if not targeted_panel_names or "전체" in targeted_panel_names:
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] ❌ 구체적으로 지목된 패널이 없음 - 라운드 미완료로 처리")
+            return False  # 구체적으로 지목된 패널이 없으므로 라운드 미완료
+        
+        # 지목된 패널들을 실제 에이전트 객체로 변환
+        targeted_panels = []
+        for panel_name in targeted_panel_names:
+            for agent in panel_agents:
+                if agent.name == panel_name:
+                    targeted_panels.append(agent)
+                    break
+        
+        if not targeted_panels:
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] ❌ 지목된 패널을 찾을 수 없음 - 라운드 미완료로 처리")
+            return False
+        
+        if self.config['debate'].get('show_debug_info', False):
+            print(f"🎯 [LLM 분석] 지목된 패널들: {[p.name for p in targeted_panels]}")
+            print(f"🎯 [LLM 분석] 응답 방식: {response_type}")
+        
+        # 응답 방식에 따라 처리
+        if response_type == "debate" or is_clash:
+            # 논쟁 모드: 지목된 패널들이 서로 근거 논쟁
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] 근거 논쟁 모드로 진행 - {len(targeted_panels)}명 패널 간 근거 논쟁")
             
-            # 지목된 패널의 응답 받기
+            # 1단계: 초기 근거 제시
+            for i, panel in enumerate(targeted_panels):
+                if i == 0:
+                    context = f"근거 제시 요청"
+                else:
+                    context = f"상대방 근거 반박 - {targeted_panels[0].name} 패널의 근거에 대한 반박"
+                
+                statements = [stmt['content'] for stmt in self.all_statements]
+                
+                if panel.is_human:
+                    response = panel.respond_to_debate(context, statements)
+                    self.presenter.display_human_response(response)
+                else:
+                    self.presenter.display_line_break()
+                    response = panel.respond_to_debate(context, statements)
+                
+                self.all_statements.append({
+                    'agent_name': panel.name,
+                    'stage': f'근거 제시 라운드 {round_number}',
+                    'content': response
+                })
+                
+                if self.config['debate'].get('show_debug_info', False):
+                    print(f"🎯 [디버그] {panel.name} 패널 근거 제시 완료")
+                
+                if not panel.is_human:
+                    time.sleep(2)
+            
+            # 2단계: 논쟁 심화 (선택적, 1회 제한)
+            # 논쟁 심화는 라운드당 1회만 허용하여 무한 반복 방지
+            try:
+                # 최근 발언들을 바탕으로 추가 논쟁 필요성 판단
+                recent_statements = [stmt['content'] for stmt in self.all_statements[-4:]]
+                follow_up_analysis = {
+                    'recent_statements': recent_statements,
+                    'round_type': '근거_논쟁_심화',
+                    'targeted_panels': [panel.name for panel in targeted_panels],
+                    'instruction': '패널들의 근거 제시가 완료되었습니다. 추가적인 논쟁이 필요한 경우에만 간단한 질문을 하시고, 그렇지 않으면 라운드를 종료하세요.'
+                }
+                
+                # 추가 논쟁 유도 메시지 생성 (제한적)
+                follow_up_message = self.response_generator.generate_dynamic_manager_response(
+                    f"근거 제시 후 논쟁 심화 판단", follow_up_analysis, panel_agents
+                )
+                
+                # 메시지가 의미있는 내용인지 검증 (너무 짧거나 일반적인 내용은 제외)
+                meaningful_keywords = ['반박', '근거', '데이터', '사례', '구체적', '증명', '논리']
+                has_meaningful_content = (follow_up_message and 
+                                        len(follow_up_message.strip()) > 50 and
+                                        any(keyword in follow_up_message for keyword in meaningful_keywords))
+                
+                # 의미있는 추가 메시지가 생성되었다면 패널들의 응답을 받음
+                if has_meaningful_content:
+                    self.presenter.display_manager_message(follow_up_message)
+                    
+                    # 추가 메시지 분석하여 응답이 필요한지 확인
+                    follow_up_analysis_result = self.response_generator.analyze_manager_message(follow_up_message, panel_agents)
+                    follow_up_targeted_panels = follow_up_analysis_result.get("targeted_panels", [])
+                    
+                    # 구체적으로 지목된 패널이 있으면 응답 진행 (최대 2명까지만)
+                    if follow_up_targeted_panels and "전체" not in follow_up_targeted_panels:
+                        follow_up_panels = []
+                        for panel_name in follow_up_targeted_panels[:2]:  # 최대 2명까지만
+                            for agent in panel_agents:
+                                if agent.name == panel_name:
+                                    follow_up_panels.append(agent)
+                                    break
+                        
+                        if follow_up_panels and self.config['debate'].get('show_debug_info', False):
+                            print(f"🎯 [디버그] 추가 논쟁 진행 - {[p.name for p in follow_up_panels]} 패널 응답")
+                        
+                        # 지목된 패널들의 추가 응답 (간단히)
+                        for panel in follow_up_panels:
+                            context = f"근거 논쟁 심화 - 추가 반박 (간단히)"
+                            statements = [stmt['content'] for stmt in self.all_statements]
+                            
+                            if panel.is_human:
+                                response = panel.respond_to_debate(context, statements)
+                                self.presenter.display_human_response(response)
+                            else:
+                                self.presenter.display_line_break()
+                                response = panel.respond_to_debate(context, statements)
+                            
+                            self.all_statements.append({
+                                'agent_name': panel.name,
+                                'stage': f'근거 제시 라운드 {round_number} 심화',
+                                'content': response
+                            })
+                            
+                            if not panel.is_human:
+                                time.sleep(2)
+                    else:
+                        if self.config['debate'].get('show_debug_info', False):
+                            print(f"🎯 [디버그] 추가 논쟁 메시지가 있지만 지목된 패널이 명확하지 않아 응답 생략")
+                else:
+                    if self.config['debate'].get('show_debug_info', False):
+                        print(f"🎯 [디버그] 추가 논쟁이 필요하지 않다고 판단하여 라운드 완료")
+                        
+            except Exception as e:
+                if self.config['debate'].get('show_debug_info', False):
+                    print(f"🎯 [디버그] 논쟁 심화 단계에서 오류 발생, 라운드 종료: {e}")
+                # 오류 발생시 라운드를 정상 종료
+        
+        elif response_type == "sequential":
+            # 순차 응답 모드: 지목된 패널들이 순서대로 근거 제시
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] 순차 근거 제시 모드로 진행 - {len(targeted_panels)}명 패널 순차 근거 제시")
+            
+            for panel in targeted_panels:
+                context = f"근거 제시 요청"
+                statements = [stmt['content'] for stmt in self.all_statements]
+                
+                if panel.is_human:
+                    response = panel.respond_to_debate(context, statements)
+                    self.presenter.display_human_response(response)
+                else:
+                    self.presenter.display_line_break()
+                    response = panel.respond_to_debate(context, statements)
+                
+                self.all_statements.append({
+                    'agent_name': panel.name,
+                    'stage': f'근거 제시 라운드 {round_number}',
+                    'content': response
+                })
+                
+                if self.config['debate'].get('show_debug_info', False):
+                    print(f"🎯 [디버그] {panel.name} 패널 근거 제시 완료")
+                
+                if not panel.is_human:
+                    time.sleep(2)
+        
+        else:
+            # individual 또는 기타: 첫 번째 지목된 패널만 근거 제시
+            panel = targeted_panels[0]
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] 개별 근거 제시 모드로 진행 - {panel.name} 패널 단독 근거 제시")
+            
             context = f"근거 제시 요청"
             statements = [stmt['content'] for stmt in self.all_statements]
             
-            if targeted_panel.is_human:
-                response = targeted_panel.respond_to_debate(context, statements)
+            if panel.is_human:
+                response = panel.respond_to_debate(context, statements)
                 self.presenter.display_human_response(response)
             else:
                 self.presenter.display_line_break()
-                response = targeted_panel.respond_to_debate(context, statements)
+                response = panel.respond_to_debate(context, statements)
             
             self.all_statements.append({
-                'agent_name': targeted_panel.name,
+                'agent_name': panel.name,
                 'stage': f'근거 제시 라운드 {round_number}',
                 'content': response
             })
             
-            print(f"🎯 [디버그] {targeted_panel.name} 패널 근거 제시 완료")
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🎯 [디버그] {panel.name} 패널 근거 제시 완료")
             
-            if not targeted_panel.is_human:
+            if not panel.is_human:
                 time.sleep(2)
             
-            # 지목된 패널이 응답한 후, 다른 패널들도 추가 근거나 의견 제시 기회 제공
-            other_panels = [agent for agent in panel_agents if agent.name != targeted_panel.name]
-            
-            # 2명까지 추가 의견 (전체가 아닌 일부만)
+            # 개별 근거 제시인 경우에만 다른 패널들의 추가 반응 기회 제공
+            other_panels = [agent for agent in panel_agents if agent.name != panel.name]
             selected_others = other_panels[:min(2, len(other_panels))]
             
             for i, agent in enumerate(selected_others):
-                # 추가 근거 요청
                 follow_up_msg = self.response_generator.generate_manager_message(
-                    "발언권 넘김", f"패널 이름: {agent.name} - {targeted_panel.name} 패널의 근거에 대한 추가 의견이나 반박 근거가 있으시면 말씀해 주시기 바랍니다."
+                    "발언권 넘김", f"패널 이름: {agent.name} - {panel.name} 패널의 근거에 대한 추가 의견이나 반박 근거가 있으시면 말씀해 주시기 바랍니다."
                 )
                 self.presenter.display_manager_message(follow_up_msg)
                 
-                context = f"추가 근거 - {targeted_panel.name} 패널 근거에 대한 의견"
+                context = f"추가 근거 - {panel.name} 패널 근거에 대한 의견"
                 statements = [stmt['content'] for stmt in self.all_statements]
                 
                 if agent.is_human:
@@ -651,11 +852,8 @@ class DebateOrchestrator:
                 
                 if not agent.is_human:
                     time.sleep(2)
-            
-            return True  # 지목된 패널이 응답했으므로 라운드 완료
-        else:
-            print(f"🎯 [디버그] ❌ 지목된 패널을 찾을 수 없음 - 라운드 미완료로 처리")
-            return False  # 지목된 패널이 없으므로 라운드 미완료
+        
+        return True  # 지목된 패널들이 응답했으므로 라운드 완료
     
     def _conduct_initial_opinions_stage(self, topic: str, panel_agents: List) -> None:
         """1단계: 초기 의견 발표"""

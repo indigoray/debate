@@ -215,3 +215,9 @@ manager = GroupChatManager(groupchat=group_chat, llm_config=llm_config)
 - AutoGen 최신 버전 기능 조사 ([Context7](mdc:Context7) 활용)
 - Multi-Agent 토론 시스템 베스트 프랙티스 연구
 - 현재 시스템의 토론 품질 vs AutoGen 활용 시 품질 비교
+
+## 🤖 토론 진행과 품질을 위한 개선
+
+### 개선점
+  - 토론 시작시, 주제외에 추가로 반드시 다루어져야할 세부 논점 추가기능 => 사회자는 초기 발제시, 그리고 라운드 전환시 참조할 것.
+  - 토론 패널 생성시, 요구사항 추가 기능, 예시) 실물경제를 오랬동안 연구해온 교수를 꼭 1인 생성 등

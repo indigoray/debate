@@ -900,34 +900,9 @@ class DebateOrchestrator:
             if not panel.is_human:
                 time.sleep(2)
             
-            # 개별 근거 제시인 경우에만 다른 패널들의 추가 반응 기회 제공
-            other_panels = [agent for agent in panel_agents if agent.name != panel.name]
-            selected_others = other_panels[:min(2, len(other_panels))]
-            
-            for i, agent in enumerate(selected_others):
-                follow_up_msg = self.response_generator.generate_manager_message(
-                    "발언권 넘김", f"패널 이름: {agent.name} - {panel.name} 패널의 근거에 대한 추가 의견이나 반박 근거가 있으시면 말씀해 주시기 바랍니다."
-                )
-                self.presenter.display_manager_message(follow_up_msg)
-                
-                context = f"추가 근거 - {panel.name} 패널 근거에 대한 의견"
-                statements = [stmt['content'] for stmt in self.all_statements]
-                
-                if agent.is_human:
-                    response = agent.respond_to_debate(context, statements)
-                    self.presenter.display_human_response(response)
-                else:
-                    self.presenter.display_line_break()
-                    response = agent.respond_to_debate(context, statements)
-                
-                self.all_statements.append({
-                    'agent_name': agent.name,
-                    'stage': f'근거 제시 라운드 {round_number} 추가 반응',
-                    'content': response
-                })
-                
-                if not agent.is_human:
-                    time.sleep(2)
+            # 라운드 완료 - 개별 근거 제시는 바로 종료 (다른 패널 자동 호출 제거)
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🏁 [디버그] 개별 근거 제시 완료 - {panel.name} 패널만 응답하고 라운드 종료")
         
         return True  # 지목된 패널들이 응답했으므로 라운드 완료
     

@@ -436,10 +436,22 @@ JSON 형태로 답변:
         if panel_agents:
             panel_names = f"참여 패널: {', '.join([agent.name for agent in panel_agents])}"
         
+        # 라운드 타입별 특별 제약사항
+        round_constraints = ""
+        round_type = analysis.get('round_type', '')
+        if '심화' in round_type or '논쟁_심화' in round_type:
+            round_constraints = f"""
+**중요 제약사항**: 현재 라운드는 기존 참여 패널들 간의 심화 논쟁입니다. 
+- 반드시 {panel_names}에 포함된 패널들만 언급하세요
+- 절대로 새로운 패널을 언급하거나 호출하지 마세요
+- 이 라운드가 완료되면 다음 라운드로 자연스럽게 전환될 예정입니다
+"""
+        
         prompt = f"""
 상황: {context}
 토론 분석: {analysis}
 {panel_names}
+{round_constraints}
 
 위 상황에서 **역동적이고 흥미진진한 토론**을 위한 진행자 발언을 생성해주세요.
 

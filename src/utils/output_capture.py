@@ -213,8 +213,23 @@ class ConsoleCapture:
                 heading_text = stripped_line.lstrip('#').strip()
                 result_lines.append(f"**{heading_text}**")
             
-            # 수평선(---)을 시각적 구분선으로 변환
-            elif stripped_line == '---':
+            # 동적 토론 특별 라운드 헤더들을 일반 텍스트로 변환
+            elif ('🔥 ===' in stripped_line and '=== 🔥' in stripped_line) or \
+                 ('⚔️  ===' in stripped_line and '=== ⚔️' in stripped_line) or \
+                 ('🔄 ===' in stripped_line and '=== 🔄' in stripped_line) or \
+                 ('📋 ===' in stripped_line and '=== 📋' in stripped_line) or \
+                 ('📝 ===' in stripped_line and '=== 📝' in stripped_line):
+                # 🔥 === 논쟁 유도 라운드 2 === 🔥 → **🔥 논쟁 유도 라운드 2 🔥**
+                clean_header = stripped_line.replace('===', '').strip()
+                result_lines.append(f"**{clean_header}**")
+            
+            # 동적 토론 설명 문구들을 처리 (💥, 🥊, 💡, 🔍로 시작하는 라인)
+            elif stripped_line.startswith(('💥 ', '🥊 ', '💡 ', '🔍 ', '💬 ')):
+                # 그대로 유지하되 특별한 처리는 하지 않음
+                result_lines.append(stripped_line)
+            
+            # 수평선(---)과 등호선(===)을 시각적 구분선으로 변환
+            elif stripped_line == '---' or (stripped_line.startswith('=') and len(set(stripped_line)) == 1):
                 result_lines.append('・・・・・・・・・・・・・・・・・・・・')
             
             # 토론 진행자 발언만 볼드체로 변환
@@ -224,24 +239,48 @@ class ConsoleCapture:
                 modified_line = f"🎭 **{clean_line}**"
                 result_lines.append(modified_line)
             
-            # 일반 패널 발언에서는 볼드체 제거
+            # 일반 패널 발언: 패널 이름을 볼드로 표시
             elif stripped_line.startswith('[') and ']' in stripped_line:
-                # 패널 발언에서 볼드체 제거
+                # 패널 발언에서 기존 볼드체 제거 후 패널 이름만 볼드로 표시
                 clean_line = stripped_line.replace('**', '').replace('***', '')
-                result_lines.append(clean_line)
+                # [패널명] 부분을 **[패널명]**으로 변환
+                if ']' in clean_line:
+                    bracket_end = clean_line.index(']') + 1
+                    panel_name = clean_line[:bracket_end]
+                    rest_content = clean_line[bracket_end:]
+                    formatted_line = f"**{panel_name}**{rest_content}"
+                    result_lines.append(formatted_line)
+                else:
+                    result_lines.append(clean_line)
             
             else:
                 result_lines.append(line)
             
-            # 발언인지 확인 ([패널명] 또는 토론 진행자)
-            is_speech = (
-                (stripped_line.startswith('[') and ']' in stripped_line) or  # 패널 발언
-                ('토론 진행자' in stripped_line)  # 토론 진행자 발언
-            )
+        # 후처리: 발언 구간 사이에 빈줄 추가
+        final_lines = []
+        i = 0
+        while i < len(result_lines):
+            line = result_lines[i]
+            final_lines.append(line)
             
-            # 발언이고, 다음 줄이 있고, 다음 줄이 빈줄이 아니면 빈줄 추가
-            if is_speech and i + 1 < len(lines) and lines[i + 1].strip() != '':
-                result_lines.append('')
+            # 현재 줄이 발언 내용이고, 다음 줄이 새로운 발언자인 경우 빈줄 추가
+            if (line.strip() and 
+                i + 1 < len(result_lines) and 
+                (result_lines[i + 1].strip().startswith(('**[', '[', '🎭')) or
+                 '===' in result_lines[i + 1] or
+                 result_lines[i + 1].strip().startswith(('💥', '🥊', '💡', '🔍', '💬')))):
+                
+                # 현재 줄이 발언자 이름이 아니라 내용인 경우에만 빈줄 추가
+                current_stripped = line.strip()
+                is_speaker_line = (current_stripped.startswith(('**[', '[', '🎭')) or
+                                 '토론 진행자' in current_stripped)
+                
+                if not is_speaker_line:
+                    final_lines.append('')
+            
+            i += 1
+        
+        result_lines = final_lines
         
         return '\n'.join(result_lines)
 

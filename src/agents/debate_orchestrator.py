@@ -37,6 +37,27 @@ class DebateOrchestrator:
         # 토론 데이터
         self.all_statements = []
     
+    def _extract_targeted_panel_from_message(self, message: str, panel_agents: List) -> 'Panel':
+        """진행자 메시지에서 지목된 패널을 찾아 반환"""
+        # 각 패널 이름에 대해 메시지에서 "패널께서" 형태로 언급되었는지 확인
+        for agent in panel_agents:
+            # 다양한 호칭 패턴 확인
+            patterns = [
+                f"{agent.name} 패널께서",
+                f"{agent.name} 패널께",
+                f"{agent.name} 패널은",
+                f"{agent.name} 패널, ",
+                f"{agent.name} 패널의",
+                f"{agent.name} 님",
+                f"{agent.name}님"
+            ]
+            
+            for pattern in patterns:
+                if pattern in message:
+                    return agent
+                    
+        return None
+    
     def announce_debate_format(self, topic: str, duration_minutes: int, panel_agents: List, user_participation: bool = False, user_name: str = None, user_expertise: str = None, system_prompt: str = None) -> None:
         """토론 방식 안내"""
         self.presenter.announce_debate_format(topic, duration_minutes, panel_agents, user_participation, user_name, user_expertise)
@@ -257,49 +278,73 @@ class DebateOrchestrator:
         print("💥 패널 간 직접적인 반박과 논쟁을 유도합니다")
         print("=" * 50)
         
-        # 대립각이 큰 패널들을 우선 선택 (처음 2명, 나중에 더 정교한 선택 가능)
-        selected_agents = panel_agents[:min(2, len(panel_agents))]
+        # 동적 진행자 메시지 생성 및 출력
+        recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
+        context_info = f"논쟁 유도 라운드 {round_number} 시작"
+        enhanced_analysis = analysis.copy()
+        enhanced_analysis['recent_statements'] = recent_statements
+        enhanced_analysis['round_type'] = '논쟁_유도'
         
-        for i, agent in enumerate(selected_agents):
-            if i == 0:
-                # 첫 번째 패널: 라운드 시작 + 논쟁 유도 설명 + 첫 패널 질문을 통합
-                recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
-                context_info = f"논쟁 유도 라운드 {round_number} 시작 및 {agent.name} 패널 질문"
-                enhanced_analysis = analysis.copy()
-                enhanced_analysis['recent_statements'] = recent_statements
-                enhanced_analysis['first_panel'] = agent.name
-                enhanced_analysis['round_type'] = '논쟁_유도'
-                
-                integrated_message = self.response_generator.generate_dynamic_manager_response(
-                    context_info, enhanced_analysis, panel_agents
-                )
-                self.presenter.display_manager_message(integrated_message)
-            else:
-                # 나머지 패널들: 간단한 발언권 넘김
-                direct_question = self.response_generator.generate_manager_message(
-                    "발언권 넘김", f"패널 이름: {agent.name} - 이어서 의견을 말씀해 주시기 바랍니다."
-                )
-                self.presenter.display_manager_message(direct_question)
-            
-            # 해당 패널의 응답 받기
+        # 진행자 메시지 생성 (특정 패널 지목 포함)
+        manager_message = self.response_generator.generate_dynamic_manager_response(
+            context_info, enhanced_analysis, panel_agents
+        )
+        self.presenter.display_manager_message(manager_message)
+        
+        # 진행자 메시지에서 지목된 패널 찾기
+        targeted_panel = self._extract_targeted_panel_from_message(manager_message, panel_agents)
+        
+        if targeted_panel:
+            # 지목된 패널의 응답 받기
             context = f"직접 반박 요청 - {analysis.get('main_issue', '핵심 쟁점')}"
             statements = [stmt['content'] for stmt in self.all_statements]
             
-            if agent.is_human:
-                response = agent.respond_to_debate(context, statements)
+            if targeted_panel.is_human:
+                response = targeted_panel.respond_to_debate(context, statements)
                 self.presenter.display_human_response(response)
             else:
                 self.presenter.display_line_break()
-                response = agent.respond_to_debate(context, statements)
+                response = targeted_panel.respond_to_debate(context, statements)
             
             self.all_statements.append({
-                'agent_name': agent.name,
+                'agent_name': targeted_panel.name,
                 'stage': f'논쟁 유도 라운드 {round_number}',
                 'content': response
             })
             
-            if not agent.is_human:
+            if not targeted_panel.is_human:
                 time.sleep(2)
+        else:
+            # 지목된 패널이 없으면 기존 방식으로 처리 (처음 2명)
+            selected_agents = panel_agents[:min(2, len(panel_agents))]
+            
+            for i, agent in enumerate(selected_agents):
+                if i > 0:  # 첫 번째는 이미 진행자 메시지에서 처리됨
+                    # 추가 패널들: 간단한 발언권 넘김
+                    direct_question = self.response_generator.generate_manager_message(
+                        "발언권 넘김", f"패널 이름: {agent.name} - 이어서 의견을 말씀해 주시기 바랍니다."
+                    )
+                    self.presenter.display_manager_message(direct_question)
+                
+                # 해당 패널의 응답 받기
+                context = f"직접 반박 요청 - {analysis.get('main_issue', '핵심 쟁점')}"
+                statements = [stmt['content'] for stmt in self.all_statements]
+                
+                if agent.is_human:
+                    response = agent.respond_to_debate(context, statements)
+                    self.presenter.display_human_response(response)
+                else:
+                    self.presenter.display_line_break()
+                    response = agent.respond_to_debate(context, statements)
+                
+                self.all_statements.append({
+                    'agent_name': agent.name,
+                    'stage': f'논쟁 유도 라운드 {round_number}',
+                    'content': response
+                })
+                
+                if not agent.is_human:
+                    time.sleep(2)
     
     def _conduct_clash_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
         """패널 간 직접 대결 라운드 - 진짜 1:1 대결"""
@@ -488,50 +533,74 @@ class DebateOrchestrator:
         print("🔍 구체적인 데이터와 근거를 요구하여 주장을 검증합니다")
         print("=" * 50)
         
-        # 각 패널에게 구체적 근거 요구
-        for i, agent in enumerate(panel_agents, 1):
-            if i == 1:
-                # 첫 번째 패널: 라운드 시작 + 근거 요구 설명 + 첫 패널 질문을 통합
-                recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
-                context_info = f"근거 제시 라운드 {round_number} 시작 및 {agent.name} 패널 질문"
-                enhanced_analysis = analysis.copy()
-                enhanced_analysis['recent_statements'] = recent_statements
-                enhanced_analysis['first_panel'] = agent.name
-                enhanced_analysis['round_type'] = '근거_요구'
-                
-                integrated_message = self.response_generator.generate_dynamic_manager_response(
-                    context_info, enhanced_analysis, panel_agents
-                )
-                self.presenter.display_manager_message(integrated_message)
-            else:
-                # 나머지 패널들: 간단한 발언권 넘김
-                evidence_request = self.response_generator.generate_manager_message(
-                    "발언권 넘김", f"패널 이름: {agent.name} - 이어서 근거를 제시해 주시기 바랍니다."
-                )
-                self.presenter.display_manager_message(evidence_request)
-            
+        # 동적 진행자 메시지 생성 및 출력
+        recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
+        context_info = f"근거 제시 라운드 {round_number} 시작"
+        enhanced_analysis = analysis.copy()
+        enhanced_analysis['recent_statements'] = recent_statements
+        enhanced_analysis['round_type'] = '근거_요구'
+        
+        # 진행자 메시지 생성 (특정 패널 지목 가능)
+        manager_message = self.response_generator.generate_dynamic_manager_response(
+            context_info, enhanced_analysis, panel_agents
+        )
+        self.presenter.display_manager_message(manager_message)
+        
+        # 진행자 메시지에서 지목된 패널 찾기
+        targeted_panel = self._extract_targeted_panel_from_message(manager_message, panel_agents)
+        
+        if targeted_panel:
+            # 지목된 패널의 응답 받기
             context = f"근거 제시 요청"
             statements = [stmt['content'] for stmt in self.all_statements]
             
-            if agent.is_human:
-                response = agent.respond_to_debate(context, statements)
+            if targeted_panel.is_human:
+                response = targeted_panel.respond_to_debate(context, statements)
                 self.presenter.display_human_response(response)
             else:
                 self.presenter.display_line_break()
-                response = agent.respond_to_debate(context, statements)
+                response = targeted_panel.respond_to_debate(context, statements)
             
             self.all_statements.append({
-                'agent_name': agent.name,
+                'agent_name': targeted_panel.name,
                 'stage': f'근거 제시 라운드 {round_number}',
                 'content': response
             })
             
-            if i < len(panel_agents):
-                next_message = self.response_generator.generate_manager_message("다음 발언자", "다음 패널도 근거를 제시해주시기 바랍니다.")
-                self.presenter.display_manager_message(next_message)
-            
-            if not agent.is_human:
+            if not targeted_panel.is_human:
                 time.sleep(2)
+        else:
+            # 지목된 패널이 없으면 모든 패널에게 발언권 (기존 방식)
+            for i, agent in enumerate(panel_agents, 1):
+                if i > 1:  # 첫 번째는 이미 진행자 메시지에서 처리됨
+                    # 나머지 패널들: 간단한 발언권 넘김
+                    evidence_request = self.response_generator.generate_manager_message(
+                        "발언권 넘김", f"패널 이름: {agent.name} - 이어서 근거를 제시해 주시기 바랍니다."
+                    )
+                    self.presenter.display_manager_message(evidence_request)
+                
+                context = f"근거 제시 요청"
+                statements = [stmt['content'] for stmt in self.all_statements]
+                
+                if agent.is_human:
+                    response = agent.respond_to_debate(context, statements)
+                    self.presenter.display_human_response(response)
+                else:
+                    self.presenter.display_line_break()
+                    response = agent.respond_to_debate(context, statements)
+                
+                self.all_statements.append({
+                    'agent_name': agent.name,
+                    'stage': f'근거 제시 라운드 {round_number}',
+                    'content': response
+                })
+                
+                if i < len(panel_agents):
+                    next_message = self.response_generator.generate_manager_message("다음 발언자", "다음 패널도 근거를 제시해주시기 바랍니다.")
+                    self.presenter.display_manager_message(next_message)
+                
+                if not agent.is_human:
+                    time.sleep(2)
     
     def _conduct_initial_opinions_stage(self, topic: str, panel_agents: List) -> None:
         """1단계: 초기 의견 발표"""

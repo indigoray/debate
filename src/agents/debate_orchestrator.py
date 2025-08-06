@@ -313,6 +313,7 @@ class DebateOrchestrator:
             if self.config['debate'].get('show_debug_info', False):
                 print(f"🎯 [디버그] 논쟁 모드로 진행 - {len(targeted_panels)}명 패널 간 논쟁")
             
+            # 1단계: 초기 논쟁
             for i, panel in enumerate(targeted_panels):
                 if i == 0:
                     context = f"직접 반박 요청 - {analysis.get('main_issue', '핵심 쟁점')}"
@@ -339,6 +340,80 @@ class DebateOrchestrator:
                 
                 if not panel.is_human:
                     time.sleep(2)
+            
+            # 2단계: 논쟁 확산 (선택적, 1회 제한)
+            try:
+                # 최근 발언들을 바탕으로 추가 논쟁 확산 필요성 판단
+                recent_statements = [stmt['content'] for stmt in self.all_statements[-4:]]
+                follow_up_analysis = {
+                    'recent_statements': recent_statements,
+                    'round_type': '논쟁_확산',
+                    'targeted_panels': [panel.name for panel in targeted_panels],
+                    'instruction': '패널들의 논쟁이 완료되었습니다. 다른 패널의 추가 의견이 필요한 경우에만 간단한 질문을 하시고, 그렇지 않으면 라운드를 종료하세요.'
+                }
+                
+                # 추가 논쟁 확산 메시지 생성 (제한적)
+                follow_up_message = self.response_generator.generate_dynamic_manager_response(
+                    f"논쟁 후 확산 판단", follow_up_analysis, panel_agents
+                )
+                
+                # 메시지가 의미있는 내용인지 검증
+                meaningful_keywords = ['반박', '의견', '어떻게', '생각', '주장', '논리']
+                has_meaningful_content = (follow_up_message and 
+                                        len(follow_up_message.strip()) > 50 and
+                                        any(keyword in follow_up_message for keyword in meaningful_keywords))
+                
+                # 의미있는 추가 메시지가 생성되었다면 패널들의 응답을 받음
+                if has_meaningful_content:
+                    self.presenter.display_manager_message(follow_up_message)
+                    
+                    # 추가 메시지 분석하여 응답이 필요한지 확인
+                    follow_up_analysis_result = self.response_generator.analyze_manager_message(follow_up_message, panel_agents)
+                    follow_up_targeted_panels = follow_up_analysis_result.get("targeted_panels", [])
+                    
+                    # 구체적으로 지목된 패널이 있으면 응답 진행 (최대 2명까지만)
+                    if follow_up_targeted_panels and "전체" not in follow_up_targeted_panels:
+                        follow_up_panels = []
+                        for panel_name in follow_up_targeted_panels[:2]:  # 최대 2명까지만
+                            for agent in panel_agents:
+                                if agent.name == panel_name:
+                                    follow_up_panels.append(agent)
+                                    break
+                        
+                        if follow_up_panels and self.config['debate'].get('show_debug_info', False):
+                            print(f"🎯 [디버그] 추가 논쟁 확산 - {[p.name for p in follow_up_panels]} 패널 응답")
+                        
+                        # 지목된 패널들의 추가 응답
+                        for panel in follow_up_panels:
+                            context = f"논쟁 확산 - 추가 의견"
+                            statements = [stmt['content'] for stmt in self.all_statements]
+                            
+                            if panel.is_human:
+                                response = panel.respond_to_debate(context, statements)
+                                self.presenter.display_human_response(response)
+                            else:
+                                self.presenter.display_line_break()
+                                response = panel.respond_to_debate(context, statements)
+                            
+                            self.all_statements.append({
+                                'agent_name': panel.name,
+                                'stage': f'논쟁 유도 라운드 {round_number} 확산',
+                                'content': response
+                            })
+                            
+                            if not panel.is_human:
+                                time.sleep(2)
+                    else:
+                        if self.config['debate'].get('show_debug_info', False):
+                            print(f"🎯 [디버그] 추가 논쟁 메시지가 있지만 지목된 패널이 명확하지 않아 응답 생략")
+                else:
+                    if self.config['debate'].get('show_debug_info', False):
+                        print(f"🎯 [디버그] 추가 논쟁 확산이 필요하지 않다고 판단하여 라운드 완료")
+                        
+            except Exception as e:
+                if self.config['debate'].get('show_debug_info', False):
+                    print(f"🎯 [디버그] 논쟁 확산 단계에서 오류 발생, 라운드 종료: {e}")
+                # 오류 발생시 라운드를 정상 종료
         
         elif response_type == "sequential":
             # 순차 응답 모드: 지목된 패널들이 순서대로 응답

@@ -396,8 +396,8 @@ JSON 형태로 답변:
         # 기본 토큰 계산 (멀티플라이어 적용)
         base_tokens = self._get_max_tokens(task_type)
         
-        # 기본 토큰의 85%~115% 사이에서 자연스러운 변화
-        # ResponseGenerator는 PanelAgent보다 약간 덜 변화를 줌 (더 안정적)
-        multiplier = random.uniform(0.85, 1.15)
+        # max_tokens 이내에서 80%~100% 사이에서 자연스러운 변화
+        # 최대값을 초과하지 않으면서도 적절한 변화를 줌
+        multiplier = random.uniform(0.8, 1.0)
         
         return int(base_tokens * multiplier)

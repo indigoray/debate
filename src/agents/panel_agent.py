@@ -69,9 +69,9 @@ class PanelAgent(Panel):
         
         base_tokens = self.config['ai']['max_tokens']
         
-        # 기본 토큰의 80%~120% 사이에서 약간의 변화만 줌
-        # 너무 큰 차이는 부자연스러우므로 미세 조정
-        multiplier = random.uniform(0.8, 1.2)
+        # max_tokens 이내에서 70%~100% 사이에서 자연스러운 변화
+        # 최대값을 초과하지 않으면서도 적절한 변화를 줌
+        multiplier = random.uniform(0.7, 1.0)
         
         dynamic_tokens = int(base_tokens * multiplier)
         

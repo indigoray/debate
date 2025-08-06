@@ -149,9 +149,9 @@ class PanelGenerator:
         # 기본 토큰 계산 (멀티플라이어 적용)
         base_tokens = self._get_max_tokens(task_type)
         
-        # 기본 토큰의 90%~110% 사이에서 자연스러운 변화
-        # PanelGenerator는 페르소나 생성이므로 안정성 중시
-        multiplier = random.uniform(0.9, 1.1)
+        # max_tokens 이내에서 85%~100% 사이에서 자연스러운 변화
+        # 페르소나 생성은 안정성이 중요하므로 변화폭을 적게 함
+        multiplier = random.uniform(0.85, 1.0)
         
         return int(base_tokens * multiplier)
     

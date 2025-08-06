@@ -63,6 +63,21 @@ class PanelAgent(Panel):
         """AI 패널임을 나타냄"""
         return False
     
+    def _get_dynamic_max_tokens(self) -> int:
+        """발언 상황에 따라 약간의 변화를 주어 자연스러움 증대"""
+        import random
+        
+        base_tokens = self.config['ai']['max_tokens']
+        
+        # 기본 토큰의 80%~120% 사이에서 약간의 변화만 줌
+        # 너무 큰 차이는 부자연스러우므로 미세 조정
+        multiplier = random.uniform(0.8, 1.2)
+        
+        dynamic_tokens = int(base_tokens * multiplier)
+        
+        # 최소 300 토큰은 보장 (너무 짧지 않게)
+        return max(300, dynamic_tokens)
+    
     def _create_system_prompt(self) -> str:
         """시스템 프롬프트 생성"""
         base_prompt = self.config['agents']['panel_agent']['base_prompt']
@@ -76,14 +91,14 @@ class PanelAgent(Panel):
             for i, instruction in enumerate(additional_instructions, 1):
                 additional_text += f"{i}. {instruction}\n"
         
-        # 응답 제약 조건 텍스트 생성
+        # 응답 제약 조건 텍스트 생성 (max_length 제외)
         constraints_text = ""
         if response_constraints:
-            constraints_text = "\n\n## 응답 제약 조건\n"
-            for key, value in response_constraints.items():
-                if key == 'max_length':
-                    constraints_text += f"- **발언 길이**: {value}\n"
-                else:
+            # max_length는 토론 수행 지침에 포함되므로 제외
+            filtered_constraints = {k: v for k, v in response_constraints.items() if k != 'max_length' and v}
+            if filtered_constraints:
+                constraints_text = "\n\n## 응답 제약 조건\n"
+                for key, value in filtered_constraints.items():
                     constraints_text += f"- **{key}**: {value}\n"
         
         system_prompt = f"""
@@ -106,6 +121,8 @@ class PanelAgent(Panel):
 3.  **논리적 주장**: 당신의 '핵심 관점 및 논리'에 따라, 구체적인 데이터, 연구, 이론, 또는 당신의 경험(서사)을 근거로 주장을 펼치세요. 추상적인 구호나 감정적인 발언을 지양하고, 논리로 상대를 설득하세요.
 4.  **적극적 상호작용**: 다른 패널의 의견을 경청하되, 당신의 논리에 비추어 비판적으로 분석하고, 날카롭게 반박하거나 동의하며 토론을 주도하세요. 진행자의 질문에는 핵심을 정확히 파악하여 답변해야 합니다.
 5.  **발전하는 관점 (선택적)**: 토론이 진행됨에 따라, 다른 패널의 합리적인 주장을 일부 수용하여 자신의 논리를 더 정교하게 만들 수 있습니다. 하지만 핵심적인 신념은 끝까지 유지해야 합니다.
+6.  **자연스러운 발언**: 전달하려는 메시지에 집중하여 자연스럽게 발언하세요. 간단한 동의나 반박은 짧게, 논리적 설명이 필요한 부분은 충분히 전개하되 불필요한 장황함은 피하세요. 가장 중요한 것은 전달하려는 메시지가 명확히 전달되는 것입니다.
+7.  **구어체와 감정표현**: 자연스러운 구어체와 적절한 감정표현을 사용하여 생생하게 발언하세요. 상황에 따라 놀라움, 우려, 확신, 의구심 등의 감정을 자연스럽게 표현하여 토론에 생동감을 더하세요.
 {constraints_text}{additional_text}
 ## 응답 형식
 모든 응답은 반드시 다음 형식으로 시작해야 합니다.
@@ -140,7 +157,7 @@ class PanelAgent(Panel):
                         {"role": "system", "content": self.system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    max_tokens=self.config['ai']['max_tokens'],
+                    max_tokens=self._get_dynamic_max_tokens(),
                     temperature=self.config['ai']['temperature'],
                     color="",  # 패널별 색상은 호출하는 곳에서 처리
                     typing_speed=typing_speed
@@ -153,7 +170,7 @@ class PanelAgent(Panel):
                         {"role": "system", "content": self.system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    max_tokens=self.config['ai']['max_tokens'],
+                    max_tokens=self._get_dynamic_max_tokens(),
                     temperature=self.config['ai']['temperature']
                 )
                 result = response.choices[0].message.content

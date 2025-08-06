@@ -22,7 +22,7 @@ ai:
   # 특정 작업에 더 많은 토큰이 필요한 경우 배수 적용
   token_multipliers:
     persona_generation: 2.0    # 페르소나 생성 (4명의 상세 정보)
-    conclusion: 2.0           # 최종 결론 (종합적 분석)
+    conclusion: 6.0           # 최종 결론 (종합적 분석)
     # briefing, summary, panel_response 등은 기본값(1.0) 사용
   api_key: your_openai_api_key_here
 
@@ -58,7 +58,7 @@ agents:
     base_prompt: "당신은 해당 분야의 전문가입니다. 자신의 전문성을 바탕으로 논리적이고 설득력 있는 의견을 제시하세요."
     # 응답 제약 조건
     response_constraints:
-      max_length: "1000자 이내로 간결하고 명확하게 표현하세요"
+      max_length: "간결하고 명확하게 표현하세요. 불필요한 설명은 피하고 핵심만 전달하세요"
       # 다른 제약 조건도 여기에 추가 가능
     # 추가 지시사항 (사용자 정의 가능)
     # 패널 에이전트의 토론 스타일과 행동을 세부적으로 조정할 수 있습니다

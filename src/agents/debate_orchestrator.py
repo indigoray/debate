@@ -173,6 +173,14 @@ class DebateOrchestrator:
             # 라운드가 완료되지 않았다면 (예: 진행자만 발언했을 경우) 같은 라운드 계속 진행
             if not round_completed:
                 current_round -= 1  # 라운드 번호를 되돌림
+            else:
+                # 라운드 완료 시 명확한 전환 신호 출력
+                if self.config['debate'].get('show_debug_info', False):
+                    print(f"🏁 [라운드 완료] 라운드 {current_round} 완료 - 다음 라운드로 전환")
+                else:
+                    print(f"\n{'='*60}")
+                    print(f"🏁 라운드 {current_round} 완료")
+                    print(f"{'='*60}\n")
             
             # 연속으로 차가운 토론 감지 (최소 라운드 이후에만 조기 종료 고려)
             if analysis and analysis.get('temperature') in ['cold', 'stuck']:
@@ -181,7 +189,7 @@ class DebateOrchestrator:
                     # 최소 라운드를 만족한 경우에만 조기 종료 고려
                     early_end_analysis = {"intervention": "토론이 충분히 진행되었으므로 마무리하겠습니다."}
                     early_end_msg = self.response_generator.generate_dynamic_manager_response(
-                        "토론 정리가 필요한 시점", early_end_analysis, panel_agents
+                        "토론 정리가 필요한 시점", early_end_analysis, panel_agents, current_round
                     )
                     self.presenter.display_manager_message(early_end_msg)
                     break
@@ -194,7 +202,7 @@ class DebateOrchestrator:
                 current_round == max_rounds and max_rounds < int(original_max_rounds * 1.5)):
                 max_rounds += 1  # 2라운드 -> 1라운드로 축소
                 extension_msg = self.response_generator.generate_dynamic_manager_response(
-                    "열띤 토론으로 인한 연장", {"intervention": "토론이 매우 활발하여 1라운드 더 진행하겠습니다."}, panel_agents
+                    "열띤 토론으로 인한 연장", {"intervention": "토론이 매우 활발하여 1라운드 더 진행하겠습니다."}, panel_agents, current_round
                 )
                 self.presenter.display_manager_message(extension_msg)
     
@@ -218,7 +226,7 @@ class DebateOrchestrator:
                     enhanced_analysis['first_panel'] = agent.name
                     
                     integrated_message = self.response_generator.generate_dynamic_manager_response(
-                        context_info, enhanced_analysis, panel_agents
+                        context_info, enhanced_analysis, panel_agents, round_number
                     )
                 else:
                     integrated_message = self.response_generator.generate_manager_message(
@@ -275,7 +283,7 @@ class DebateOrchestrator:
         
         # 진행자 메시지 생성 (특정 패널 지목 포함)
         manager_message = self.response_generator.generate_dynamic_manager_response(
-            context_info, enhanced_analysis, panel_agents
+            context_info, enhanced_analysis, panel_agents, round_number
         )
         self.presenter.display_manager_message(manager_message)
         
@@ -352,9 +360,9 @@ class DebateOrchestrator:
                     'instruction': '패널들의 논쟁이 완료되었습니다. 다른 패널의 추가 의견이 필요한 경우에만 간단한 질문을 하시고, 그렇지 않으면 라운드를 종료하세요.'
                 }
                 
-                # 추가 논쟁 확산 메시지 생성 (제한적)
+                # 추가 논쟁 확산 메시지 생성 (제한적, 기존 참여 패널만)
                 follow_up_message = self.response_generator.generate_dynamic_manager_response(
-                    f"논쟁 후 확산 판단", follow_up_analysis, panel_agents
+                    f"논쟁 후 확산 판단", follow_up_analysis, targeted_panels, round_number  # panel_agents 대신 targeted_panels 사용
                 )
                 
                 # 메시지가 의미있는 내용인지 검증
@@ -367,15 +375,16 @@ class DebateOrchestrator:
                 if has_meaningful_content:
                     self.presenter.display_manager_message(follow_up_message)
                     
-                    # 추가 메시지 분석하여 응답이 필요한지 확인
-                    follow_up_analysis_result = self.response_generator.analyze_manager_message(follow_up_message, panel_agents)
+                    # 추가 메시지 분석하여 응답이 필요한지 확인 (기존 참여 패널만)
+                    follow_up_analysis_result = self.response_generator.analyze_manager_message(follow_up_message, targeted_panels)
                     follow_up_targeted_panels = follow_up_analysis_result.get("targeted_panels", [])
                     
                     # 구체적으로 지목된 패널이 있으면 응답 진행 (최대 2명까지만)
                     if follow_up_targeted_panels and "전체" not in follow_up_targeted_panels:
                         follow_up_panels = []
                         for panel_name in follow_up_targeted_panels[:2]:  # 최대 2명까지만
-                            for agent in panel_agents:
+                            # 기존 참여 패널 중에서만 선택
+                            for agent in targeted_panels:
                                 if agent.name == panel_name:
                                     follow_up_panels.append(agent)
                                     break
@@ -526,9 +535,9 @@ class DebateOrchestrator:
         enhanced_analysis['clash_pair'] = f"{agent1.name} vs {agent2.name}"
         enhanced_analysis['round_type'] = '직접_대결'
         
-        challenge_msg = self.response_generator.generate_dynamic_manager_response(
-            context_info, enhanced_analysis, panel_agents
-        )
+                        challenge_msg = self.response_generator.generate_dynamic_manager_response(
+                    context_info, enhanced_analysis, panel_agents, round_number
+                )
         self.presenter.display_manager_message(challenge_msg)
         
         print(f"\n🔥 {agent1.name} vs {agent2.name} 직접 대결!")
@@ -651,7 +660,7 @@ class DebateOrchestrator:
                 enhanced_analysis['round_type'] = '새로운_관점'
                 
                 integrated_message = self.response_generator.generate_dynamic_manager_response(
-                    context_info, enhanced_analysis, panel_agents
+                    context_info, enhanced_analysis, panel_agents, round_number
                 )
                 self.presenter.display_manager_message(integrated_message)
             else:
@@ -702,7 +711,7 @@ class DebateOrchestrator:
         
         # 진행자 메시지 생성 (특정 패널 지목 가능)
         manager_message = self.response_generator.generate_dynamic_manager_response(
-            context_info, enhanced_analysis, panel_agents
+            context_info, enhanced_analysis, panel_agents, round_number
         )
         self.presenter.display_manager_message(manager_message)
         
@@ -768,9 +777,12 @@ class DebateOrchestrator:
                 if not panel.is_human:
                     time.sleep(2)
             
-            # 2단계: 논쟁 심화 (선택적, 1회 제한)
-            # 논쟁 심화는 라운드당 1회만 허용하여 무한 반복 방지
-            try:
+            # 근거 제시 논쟁 모드에서는 즉시 라운드 완료 (follow-up 비활성화)
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🏁 [디버그] 근거 제시 논쟁 완료 - {[p.name for p in targeted_panels]} 패널 간 논쟁 종료, 라운드 완료")
+            
+            # 기존 논쟁 심화 로직 비활성화 (라운드 경계 명확화를 위해)
+            if False:  # 논쟁 심화 비활성화
                 # 최근 발언들을 바탕으로 추가 논쟁 필요성 판단
                 recent_statements = [stmt['content'] for stmt in self.all_statements[-4:]]
                 follow_up_analysis = {
@@ -782,7 +794,7 @@ class DebateOrchestrator:
                 
                 # 추가 논쟁 유도 메시지 생성 (제한적, 기존 참여 패널만)
                 follow_up_message = self.response_generator.generate_dynamic_manager_response(
-                    f"근거 제시 후 논쟁 심화 판단", follow_up_analysis, targeted_panels  # panel_agents 대신 targeted_panels 사용
+                    f"근거 제시 후 논쟁 심화 판단", follow_up_analysis, targeted_panels, round_number  # panel_agents 대신 targeted_panels 사용
                 )
                 
                 # 메시지가 의미있는 내용인지 검증 (너무 짧거나 일반적인 내용은 제외)

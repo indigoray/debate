@@ -426,7 +426,7 @@ JSON 형태로 답변:
                 "intervention": "계속 진행하겠습니다."
             }
     
-    def generate_dynamic_manager_response(self, context: str, analysis: Dict[str, Any] = None, panel_agents: List = None) -> str:
+    def generate_dynamic_manager_response(self, context: str, analysis: Dict[str, Any] = None, panel_agents: List = None, current_round: int = None) -> str:
         """동적 매니저 응답 생성 (Dynamic 모드용)"""
         if analysis is None:
             analysis = {"next_action": "continue_normal", "intervention": "계속 진행하겠습니다."}
@@ -446,12 +446,26 @@ JSON 형태로 답변:
 - 절대로 새로운 패널을 언급하거나 호출하지 마세요
 - 이 라운드가 완료되면 다음 라운드로 자연스럽게 전환될 예정입니다
 """
+        elif current_round is not None:
+            # 라운드 경계 인식을 위한 일반적 제약
+            round_constraints = f"""
+**라운드 경계 제약사항**: 
+- 현재 라운드 {current_round}에서 새로운 패널을 언급할 때는 신중하게 판단하세요
+- 이전 라운드에서 언급되지 않은 패널을 갑자기 호출하지 마세요
+- 라운드 간 자연스러운 전환을 위해 기존 참여 패널들의 논의를 마무리한 후 새로운 패널을 언급하세요
+"""
+        
+        # 라운드 정보 추가
+        round_info = ""
+        if current_round is not None:
+            round_info = f"현재 라운드: {current_round}"
         
         prompt = f"""
 상황: {context}
 토론 분석: {analysis}
 {panel_names}
 {round_constraints}
+{round_info}
 
 위 상황에서 **역동적이고 흥미진진한 토론**을 위한 진행자 발언을 생성해주세요.
 
@@ -463,6 +477,7 @@ JSON 형태로 답변:
 5. **반복적이거나 뻔한 표현 금지**: "어떻게 생각하십니까?" 같은 평범한 질문 피하기
 6. "[토론 진행자]"로 시작
 7. 구체적인 패널 이름 사용 (모호한 표현 금지)
+8. **라운드 경계 존중**: 이전 라운드에서 언급되지 않은 패널을 갑자기 호출하지 마세요. 라운드 간 자연스러운 전환을 위해 기존 참여 패널들의 논의를 마무리한 후 새로운 패널을 언급하세요.
 
 **라운드 타입별 톤:**
 - **논쟁_유도**: "A 패널께서는 B 패널의 주장을 어떻게 반박하시겠습니까?" (도전적)

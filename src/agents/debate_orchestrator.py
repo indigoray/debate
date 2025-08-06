@@ -535,9 +535,9 @@ class DebateOrchestrator:
         enhanced_analysis['clash_pair'] = f"{agent1.name} vs {agent2.name}"
         enhanced_analysis['round_type'] = '직접_대결'
         
-                        challenge_msg = self.response_generator.generate_dynamic_manager_response(
-                    context_info, enhanced_analysis, panel_agents, round_number
-                )
+        challenge_msg = self.response_generator.generate_dynamic_manager_response(
+            context_info, enhanced_analysis, panel_agents, round_number
+        )
         self.presenter.display_manager_message(challenge_msg)
         
         print(f"\n🔥 {agent1.name} vs {agent2.name} 직접 대결!")
@@ -782,79 +782,79 @@ class DebateOrchestrator:
                 print(f"🏁 [디버그] 근거 제시 논쟁 완료 - {[p.name for p in targeted_panels]} 패널 간 논쟁 종료, 라운드 완료")
             
             # 기존 논쟁 심화 로직 비활성화 (라운드 경계 명확화를 위해)
-            if False:  # 논쟁 심화 비활성화
-                # 최근 발언들을 바탕으로 추가 논쟁 필요성 판단
-                recent_statements = [stmt['content'] for stmt in self.all_statements[-4:]]
-                follow_up_analysis = {
-                    'recent_statements': recent_statements,
-                    'round_type': '근거_논쟁_심화',
-                    'targeted_panels': [panel.name for panel in targeted_panels],
-                    'instruction': f'근거 제시 라운드에서 {[p.name for p in targeted_panels]} 패널들의 근거 교환이 완료되었습니다. 이 두 패널 간의 추가적인 간단한 논쟁이 필요한 경우에만 이들을 다시 지목하여 질문하시고, 그렇지 않으면 라운드를 종료하세요. 절대로 다른 패널을 새롭게 언급하지 마세요.'
-                }
-                
-                # 추가 논쟁 유도 메시지 생성 (제한적, 기존 참여 패널만)
-                follow_up_message = self.response_generator.generate_dynamic_manager_response(
-                    f"근거 제시 후 논쟁 심화 판단", follow_up_analysis, targeted_panels, round_number  # panel_agents 대신 targeted_panels 사용
-                )
-                
-                # 메시지가 의미있는 내용인지 검증 (너무 짧거나 일반적인 내용은 제외)
-                meaningful_keywords = ['반박', '근거', '데이터', '사례', '구체적', '증명', '논리']
-                has_meaningful_content = (follow_up_message and 
-                                        len(follow_up_message.strip()) > 50 and
-                                        any(keyword in follow_up_message for keyword in meaningful_keywords))
-                
-                # 의미있는 추가 메시지가 생성되었다면 패널들의 응답을 받음
-                if has_meaningful_content:
-                    self.presenter.display_manager_message(follow_up_message)
-                    
-                    # 추가 메시지 분석하여 응답이 필요한지 확인 (기존 참여 패널만)
-                    follow_up_analysis_result = self.response_generator.analyze_manager_message(follow_up_message, targeted_panels)
-                    follow_up_targeted_panels = follow_up_analysis_result.get("targeted_panels", [])
-                    
-                    # 구체적으로 지목된 패널이 있으면 응답 진행 (최대 2명까지만, 기존 참여 패널 중에서만)
-                    if follow_up_targeted_panels and "전체" not in follow_up_targeted_panels:
-                        follow_up_panels = []
-                        for panel_name in follow_up_targeted_panels[:2]:  # 최대 2명까지만
-                            # 기존 참여 패널 중에서만 선택
-                            for agent in targeted_panels:
-                                if agent.name == panel_name:
-                                    follow_up_panels.append(agent)
-                                    break
-                        
-                        if follow_up_panels and self.config['debate'].get('show_debug_info', False):
-                            print(f"🎯 [디버그] 추가 근거 논쟁 - {[p.name for p in follow_up_panels]} 패널 응답 (기존 참여 패널만)")
-                        
-                        # 지목된 패널들의 추가 응답 (간단히)
-                        for panel in follow_up_panels:
-                            context = f"근거 논쟁 심화 - 추가 반박 (간단히)"
-                            statements = [stmt['content'] for stmt in self.all_statements]
-                            
-                            if panel.is_human:
-                                response = panel.respond_to_debate(context, statements)
-                                self.presenter.display_human_response(response)
-                            else:
-                                self.presenter.display_line_break()
-                                response = panel.respond_to_debate(context, statements)
-                            
-                            self.all_statements.append({
-                                'agent_name': panel.name,
-                                'stage': f'근거 제시 라운드 {round_number} 심화',
-                                'content': response
-                            })
-                            
-                            if not panel.is_human:
-                                time.sleep(2)
-                    else:
-                        if self.config['debate'].get('show_debug_info', False):
-                            print(f"🎯 [디버그] 추가 논쟁 메시지가 있지만 지목된 패널이 명확하지 않아 응답 생략")
-                else:
-                    if self.config['debate'].get('show_debug_info', False):
-                        print(f"🎯 [디버그] 추가 논쟁이 필요하지 않다고 판단하여 라운드 완료")
-                        
-            except Exception as e:
-                if self.config['debate'].get('show_debug_info', False):
-                    print(f"🎯 [디버그] 논쟁 심화 단계에서 오류 발생, 라운드 종료: {e}")
-                # 오류 발생시 라운드를 정상 종료
+            # if False:  # 논쟁 심화 비활성화 - 주석 처리
+            #     try:
+            #         # 최근 발언들을 바탕으로 추가 논쟁 필요성 판단
+            #         recent_statements = [stmt['content'] for stmt in self.all_statements[-4:]]
+            #         follow_up_analysis = {
+            #             'recent_statements': recent_statements,
+            #             'round_type': '근거_논쟁_심화',
+            #             'targeted_panels': [panel.name for panel in targeted_panels],
+            #             'instruction': f'근거 제시 라운드에서 {[p.name for p in targeted_panels]} 패널들의 근거 교환이 완료되었습니다. 이 두 패널 간의 추가적인 간단한 논쟁이 필요한 경우에만 이들을 다시 지목하여 질문하시고, 그렇지 않으면 라운드를 종료하세요. 절대로 다른 패널을 새롭게 언급하지 마세요.'
+            #         }
+            #         
+            #         # 추가 논쟁 유도 메시지 생성 (제한적, 기존 참여 패널만)
+            #         follow_up_message = self.response_generator.generate_dynamic_manager_response(
+            #             f"근거 제시 후 논쟁 심화 판단", follow_up_analysis, targeted_panels, round_number  # panel_agents 대신 targeted_panels 사용
+            #         )
+            #         
+            #         # 메시지가 의미있는 내용인지 검증 (너무 짧거나 일반적인 내용은 제외)
+            #         meaningful_keywords = ['반박', '근거', '데이터', '사례', '구체적', '증명', '논리']
+            #         has_meaningful_content = (follow_up_message and 
+            #                                 len(follow_up_message.strip()) > 50 and
+            #                                 any(keyword in follow_up_message for keyword in meaningful_keywords))
+            #         
+            #         # 의미있는 추가 메시지가 생성되었다면 패널들의 응답을 받음
+            #         if has_meaningful_content:
+            #             self.presenter.display_manager_message(follow_up_message)
+            #             
+            #             # 추가 메시지 분석하여 응답이 필요한지 확인 (기존 참여 패널만)
+            #             follow_up_analysis_result = self.response_generator.analyze_manager_message(follow_up_message, targeted_panels)
+            #             follow_up_targeted_panels = follow_up_analysis_result.get("targeted_panels", [])
+            #             
+            #             # 구체적으로 지목된 패널이 있으면 응답 진행 (최대 2명까지만, 기존 참여 패널 중에서만)
+            #             if follow_up_targeted_panels and "전체" not in follow_up_targeted_panels:
+            #                 follow_up_panels = []
+            #                 for panel_name in follow_up_targeted_panels[:2]:  # 최대 2명까지만
+            #                     # 기존 참여 패널 중에서만 선택
+            #                     for agent in targeted_panels:
+            #                         if agent.name == panel_name:
+            #                             follow_up_panels.append(agent)
+            #                             break
+            #                 
+            #                 if follow_up_panels and self.config['debate'].get('show_debug_info', False):
+            #                     print(f"🎯 [디버그] 추가 근거 논쟁 - {[p.name for p in follow_up_panels]} 패널 응답 (기존 참여 패널만)")
+            #                 
+            #                 # 지목된 패널들의 추가 응답 (간단히)
+            #                 for panel in follow_up_panels:
+            #                     context = f"근거 논쟁 심화 - 추가 반박 (간단히)"
+            #                     statements = [stmt['content'] for stmt in self.all_statements]
+            #                     
+            #                     if panel.is_human:
+            #                         response = panel.respond_to_debate(context, statements)
+            #                         self.presenter.display_human_response(response)
+            #                     else:
+            #                         self.presenter.display_line_break()
+            #                         response = panel.respond_to_debate(context, statements)
+            #                     
+            #                     self.all_statements.append({
+            #                         'agent_name': panel.name,
+            #                         'stage': f'근거 제시 라운드 {round_number} 심화',
+            #                         'content': response
+            #                     })
+            #                     
+            #                     if not panel.is_human:
+            #                         time.sleep(2)
+            #             else:
+            #                 if self.config['debate'].get('show_debug_info', False):
+            #                     print(f"🎯 [디버그] 추가 논쟁 메시지가 있지만 지목된 패널이 명확하지 않아 응답 생략")
+            #         else:
+            #             if self.config['debate'].get('show_debug_info', False):
+            #                 print(f"🎯 [디버그] 추가 논쟁이 필요하지 않다고 판단하여 라운드 완료")
+            #     except Exception as e:
+            #         if self.config['debate'].get('show_debug_info', False):
+            #             print(f"🎯 [디버그] 논쟁 심화 단계에서 오류 발생, 라운드 종료: {e}")
+            #         # 오류 발생시 라운드를 정상 종료
         
         elif response_type == "sequential":
             # 순차 응답 모드: 지목된 패널들이 순서대로 근거 제시

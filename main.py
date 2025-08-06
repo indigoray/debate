@@ -92,9 +92,7 @@ def load_config():
                         'agents': {
                             'debate_manager': {
                                 'system_prompt': '당신은 전문적인 토론 진행자입니다. 균형잡힌 토론을 이끌어가세요.',
-                                'response_constraints': {
-                                    'max_length': '간결하고 명확하게 표현하세요. 불필요한 설명은 피하고 핵심만 전달하세요'
-                                },
+                                'response_constraints': {},
                                 'additional_instructions': [
                                 "발언 시 반드시 구체적인 데이터나 통계를 포함하세요",
                                 "상대방 의견에 대해 더 강하게 반박하세요", 
@@ -103,9 +101,7 @@ def load_config():
                             },
                             'panel_agent': {
                                 'base_prompt': '당신은 해당 분야의 전문가입니다. 자신의 전문성을 바탕으로 논리적이고 설득력 있는 의견을 제시하세요. 자연스러운 구어체를 사용하고, 상황에 따라 적절한 감정표현을 넣어 생동감 있게 발언하세요.',
-                                'response_constraints': {
-                                    'max_length': '전달하려는 메시지에 집중하여 자연스럽게 발언하세요. 간단한 동의나 반박은 짧게, 논리적 설명이 필요한 부분은 충분히 전개하되 불필요한 장황함은 피하세요'
-                                },
+                                'response_constraints': {},
                                 'additional_instructions': [
                                 "발언 시 반드시 구체적인 데이터나 통계를 포함하세요",
                                 "상대방 의견에 대해 더 강하게 반박하세요", 
@@ -150,9 +146,7 @@ def load_config():
                     'agents': {
                         'debate_manager': {
                             'system_prompt': '당신은 전문적인 토론 진행자입니다. 균형잡힌 토론을 이끌어가세요.',
-                            'response_constraints': {
-                                'max_length': '간결하고 명확하게 표현하세요. 불필요한 설명은 피하고 핵심만 전달하세요'
-                            },
+                            'response_constraints': {},
                             'additional_instructions': [
                                 "발언 시 반드시 구체적인 데이터나 통계를 포함하세요",
                                 "상대방 의견에 대해 더 강하게 반박하세요", 
@@ -161,9 +155,7 @@ def load_config():
                         },
                         'panel_agent': {
                             'base_prompt': '당신은 해당 분야의 전문가입니다. 자신의 전문성을 바탕으로 논리적이고 설득력 있는 의견을 제시하세요. 자연스러운 구어체를 사용하고, 상황에 따라 적절한 감정표현을 넣어 생동감 있게 발언하세요.',
-                            'response_constraints': {
-                                # 발언 길이 관련 지침은 토론 수행 지침에 포함됨
-                            },
+                            'response_constraints': {},
                             'additional_instructions': [
                                 "발언 시 반드시 구체적인 데이터나 통계를 포함하세요",
                                 "상대방 의견에 대해 더 강하게 반박하세요", 

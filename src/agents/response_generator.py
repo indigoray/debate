@@ -57,7 +57,7 @@ class ResponseGenerator:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": briefing_prompt}
                     ],
-                    max_tokens=self.config['ai']['max_tokens'],
+                    max_tokens=self._get_dynamic_max_tokens(),
                     temperature=self.config['ai']['temperature'],
                     color=Fore.MAGENTA,
                     typing_speed=typing_speed
@@ -70,7 +70,7 @@ class ResponseGenerator:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": briefing_prompt}
                     ],
-                    max_tokens=self.config['ai']['max_tokens'],
+                    max_tokens=self._get_dynamic_max_tokens(),
                     temperature=self.config['ai']['temperature']
                 )
                 result = response.choices[0].message.content
@@ -102,7 +102,7 @@ class ResponseGenerator:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": summary_prompt}
                 ],
-                max_tokens=self.config['ai']['max_tokens'],
+                max_tokens=self._get_dynamic_max_tokens(),
                 temperature=self.config['ai']['temperature']
             )
             
@@ -183,7 +183,7 @@ class ResponseGenerator:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": conclusion_prompt}
                     ],
-                    max_tokens=self._get_max_tokens('conclusion'),
+                    max_tokens=self._get_dynamic_max_tokens('conclusion'),
                     temperature=self.config['ai']['temperature'],
                     color=Fore.CYAN,
                     typing_speed=typing_speed
@@ -196,7 +196,7 @@ class ResponseGenerator:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": conclusion_prompt}
                     ],
-                    max_tokens=self._get_max_tokens('conclusion'),
+                    max_tokens=self._get_dynamic_max_tokens('conclusion'),
                     temperature=self.config['ai']['temperature']
                 )
                 result = response.choices[0].message.content
@@ -283,7 +283,7 @@ JSON 형태로 답변:
                     {"role": "system", "content": "토론 분석 전문가로서 객관적으로 분석하세요."},
                     {"role": "user", "content": analysis_prompt}
                 ],
-                max_tokens=self.config['ai']['max_tokens'],
+                max_tokens=self._get_dynamic_max_tokens(),
                 temperature=0.3
             )
             
@@ -364,7 +364,7 @@ JSON 형태로 답변:
                     {"role": "system", "content": "전문적인 토론 진행자로서 상황에 맞는 적절한 개입을 하세요."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=self.config['ai']['max_tokens'],
+                max_tokens=self._get_dynamic_max_tokens(),
                 temperature=0.7
             )
             
@@ -387,4 +387,17 @@ JSON 형태로 답변:
         base_tokens = self.config['ai']['max_tokens']
         multipliers = self.config['ai'].get('token_multipliers', {})
         multiplier = multipliers.get(task_type, 1.0)
+        return int(base_tokens * multiplier)
+    
+    def _get_dynamic_max_tokens(self, task_type: str = "default") -> int:
+        """자연스러운 변화를 위한 동적 max_tokens 계산"""
+        import random
+        
+        # 기본 토큰 계산 (멀티플라이어 적용)
+        base_tokens = self._get_max_tokens(task_type)
+        
+        # 기본 토큰의 85%~115% 사이에서 자연스러운 변화
+        # ResponseGenerator는 PanelAgent보다 약간 덜 변화를 줌 (더 안정적)
+        multiplier = random.uniform(0.85, 1.15)
+        
         return int(base_tokens * multiplier)

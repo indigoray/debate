@@ -77,7 +77,7 @@ class PanelGenerator:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": persona_prompt}
                     ],
-                    max_tokens=self._get_max_tokens('persona_generation'),
+                    max_tokens=self._get_dynamic_max_tokens('persona_generation'),
                     temperature=self.config['ai']['temperature'],
                     color=Fore.CYAN,
                     typing_speed=typing_speed
@@ -90,7 +90,7 @@ class PanelGenerator:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": persona_prompt}
                     ],
-                    max_tokens=self._get_max_tokens('persona_generation'),
+                    max_tokens=self._get_dynamic_max_tokens('persona_generation'),
                     temperature=self.config['ai']['temperature']
                 )
                 result = response.choices[0].message.content
@@ -140,6 +140,19 @@ class PanelGenerator:
         base_tokens = self.config['ai']['max_tokens']
         multipliers = self.config['ai'].get('token_multipliers', {})
         multiplier = multipliers.get(task_type, 1.0)
+        return int(base_tokens * multiplier)
+    
+    def _get_dynamic_max_tokens(self, task_type: str = "default") -> int:
+        """자연스러운 변화를 위한 동적 max_tokens 계산"""
+        import random
+        
+        # 기본 토큰 계산 (멀티플라이어 적용)
+        base_tokens = self._get_max_tokens(task_type)
+        
+        # 기본 토큰의 90%~110% 사이에서 자연스러운 변화
+        # PanelGenerator는 페르소나 생성이므로 안정성 중시
+        multiplier = random.uniform(0.9, 1.1)
+        
         return int(base_tokens * multiplier)
     
     def _parse_expert_personas(self, response: str, panel_size: int) -> List[Dict[str, str]]:

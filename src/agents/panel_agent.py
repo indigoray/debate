@@ -91,11 +91,10 @@ class PanelAgent(Panel):
             for i, instruction in enumerate(additional_instructions, 1):
                 additional_text += f"{i}. {instruction}\n"
         
-        # 응답 제약 조건 텍스트 생성 (max_length 제외)
+        # 응답 제약 조건 텍스트 생성
         constraints_text = ""
         if response_constraints:
-            # max_length는 토론 수행 지침에 포함되므로 제외
-            filtered_constraints = {k: v for k, v in response_constraints.items() if k != 'max_length' and v}
+            filtered_constraints = {k: v for k, v in response_constraints.items() if v}
             if filtered_constraints:
                 constraints_text = "\n\n## 응답 제약 조건\n"
                 for key, value in filtered_constraints.items():

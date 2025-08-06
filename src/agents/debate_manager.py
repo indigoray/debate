@@ -94,9 +94,7 @@ class DebateManager:
         if response_constraints:
             constraints_text = "\n\n## 응답 제약 조건\n"
             for key, value in response_constraints.items():
-                if key == 'max_length':
-                    constraints_text += f"- **발언 길이**: {value}\n"
-                else:
+                if value:  # 빈 값이 아닌 경우만 추가
                     constraints_text += f"- **{key}**: {value}\n"
         
         # 사용자 참여시 추가 지침

@@ -48,9 +48,12 @@ class ResponseGenerator:
             # 타이핑 속도 가져오기
             typing_speed = get_typing_speed(self.config)
             
-            # 동적 토큰 계산
-            actual_max_tokens = self._get_dynamic_max_tokens()
-            enhanced_prompt = self._enhance_prompt_with_token_info(briefing_prompt, actual_max_tokens)
+            # 토큰 계산 (AI 안내용 vs API 실제용)
+            base_tokens = self._get_dynamic_max_tokens()
+            announced_tokens = base_tokens  # AI에게 알려줄 토큰 수
+            actual_max_tokens = int(base_tokens * 1.2)  # API에 실제 전송할 토큰 수 (1.2배 여유분)
+            
+            enhanced_prompt = self._enhance_prompt_with_token_info(briefing_prompt, announced_tokens)
             
             if typing_speed > 0:
                 # 스트리밍으로 브리핑 생성
@@ -99,9 +102,12 @@ class ResponseGenerator:
             
             client = openai.OpenAI(api_key=self.api_key)
             
-            # 동적 토큰 계산
-            actual_max_tokens = self._get_dynamic_max_tokens()
-            enhanced_prompt = self._enhance_prompt_with_token_info(summary_prompt, actual_max_tokens)
+            # 토큰 계산 (AI 안내용 vs API 실제용)
+            base_tokens = self._get_dynamic_max_tokens()
+            announced_tokens = base_tokens  # AI에게 알려줄 토큰 수  
+            actual_max_tokens = int(base_tokens * 1.2)  # API에 실제 전송할 토큰 수 (1.2배 여유분)
+            
+            enhanced_prompt = self._enhance_prompt_with_token_info(summary_prompt, announced_tokens)
             
             # 스트리밍으로 요약 생성 (출력 없이 생성만)
             response = client.chat.completions.create(
@@ -174,7 +180,7 @@ class ResponseGenerator:
 - 이 토론이 우리 사회에 주는 의미와 가치
 - 앞으로 나아갈 방향에 대한 구체적 제안
 
-각 섹션은 1~3개 문단으로 구성하되, 추상적 서술보다는 구체적 내용과 실질적 분석에 중점을 두어 작성해주세요. 특히 마지막 '종합 결론' 섹션은 다른 섹션들보다 2배 이상 길게 작성하여 토론의 핵심 가치와 의미를 충분히 담아내주세요. 반드시 실제 참여한 모든 패널의 이름과 관점을 균형있게 반영하여 주시기 바랍니다.
+각 섹션은 1~3개 문단으로 구성하되, 추상적 서술보다는 구체적 내용과 실질적 분석에 중점을 두어 작성해주세요. 특히 마지막 '종합 결론' 섹션은 다른 섹션들보다 2배 이상 길게 작성하여 토론의 핵심 가치와 의미를 충분히 담아내세요.
 
 """
         
@@ -186,9 +192,12 @@ class ResponseGenerator:
             # 타이핑 속도 가져오기
             typing_speed = get_typing_speed(self.config)
             
-            # 동적 토큰 계산
-            actual_max_tokens = self._get_dynamic_max_tokens('conclusion')
-            enhanced_prompt = self._enhance_prompt_with_token_info(conclusion_prompt, actual_max_tokens)
+            # 토큰 계산 (AI 안내용 vs API 실제용)
+            base_tokens = self._get_dynamic_max_tokens('conclusion')
+            announced_tokens = base_tokens  # AI에게 알려줄 토큰 수
+            actual_max_tokens = int(base_tokens * 1.2)  # API에 실제 전송할 토큰 수 (1.2배 여유분)
+            
+            enhanced_prompt = self._enhance_prompt_with_token_info(conclusion_prompt, announced_tokens)
             
             if typing_speed > 0:
                 # 스트리밍으로 결론 생성
@@ -418,10 +427,10 @@ JSON 형태로 답변:
         
         return int(base_tokens * multiplier)
     
-    def _enhance_prompt_with_token_info(self, prompt: str, max_tokens: int) -> str:
+    def _enhance_prompt_with_token_info(self, prompt: str, announced_tokens: int) -> str:
         """프롬프트에 토큰 제한 정보 추가"""
         return f"""
 {prompt}
 
-**중요 지침**: 이 응답은 최대 {max_tokens}토큰으로 제한됩니다. 반드시 이 범위 내에서 완결된 내용을 작성하세요. 중간에 잘리지 않도록 핵심 메시지를 우선적으로 전달하고, 마지막 문장까지 완전히 끝내세요.
+**중요 지침**: 이 응답은 최대 {announced_tokens}토큰으로 제한됩니다. 반드시 이 범위 내에서 완결된 내용을 작성하세요. 중간에 잘리지 않도록 핵심 메시지를 우선적으로 전달하고, 마지막 문장까지 완전히 끝내세요.
 """

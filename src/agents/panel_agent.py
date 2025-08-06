@@ -145,13 +145,19 @@ class PanelAgent(Panel):
             client = openai.OpenAI(api_key=self.api_key)
             
             # 실제 적용될 max_tokens 계산
-            actual_max_tokens = self._get_dynamic_max_tokens()
+            base_tokens = self._get_dynamic_max_tokens()
+            
+            # AI에게 알려줄 토큰 수 (실제보다 적게)
+            announced_tokens = base_tokens
+            
+            # API에 실제 전송할 토큰 수 (1.2배 여유분)
+            actual_max_tokens = int(base_tokens * 1.2)
             
             # 토큰 정보를 포함한 개선된 프롬프트
             enhanced_prompt = f"""
 {prompt}
 
-**중요 지침**: 이 응답은 최대 {actual_max_tokens}토큰으로 제한됩니다. 반드시 이 범위 내에서 완결된 발언을 작성하세요. 중간에 잘리지 않도록 핵심 메시지를 우선적으로 전달하고, 마지막 문장까지 완전히 끝내세요.
+**중요 지침**: 이 응답은 최대 {announced_tokens}토큰으로 제한됩니다. 반드시 이 범위 내에서 완결된 발언을 작성하세요. 중간에 잘리지 않도록 핵심 메시지를 우선적으로 전달하고, 마지막 문장까지 완전히 끝내세요.
 """
             
             # config에서 타이핑 속도 가져오기

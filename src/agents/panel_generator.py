@@ -68,9 +68,12 @@ class PanelGenerator:
             # 타이핑 속도 가져오기
             typing_speed = get_typing_speed(self.config)
             
-            # 페르소나 생성은 안정성이 중요하므로 고정 토큰 사용
-            actual_max_tokens = self._get_max_tokens('persona_generation')
-            enhanced_prompt = self._enhance_prompt_with_token_info(persona_prompt, actual_max_tokens)
+            # 토큰 계산 (AI 안내용 vs API 실제용)
+            base_tokens = self._get_max_tokens('persona_generation')
+            announced_tokens = base_tokens  # AI에게 알려줄 토큰 수
+            actual_max_tokens = int(base_tokens * 1.2)  # API에 실제 전송할 토큰 수 (1.2배 여유분)
+            
+            enhanced_prompt = self._enhance_prompt_with_token_info(persona_prompt, announced_tokens)
             
             if typing_speed > 0:
                 # 스트리밍으로 페르소나 생성 과정 출력
@@ -146,12 +149,12 @@ class PanelGenerator:
         multiplier = multipliers.get(task_type, 1.0)
         return int(base_tokens * multiplier)
     
-    def _enhance_prompt_with_token_info(self, prompt: str, max_tokens: int) -> str:
+    def _enhance_prompt_with_token_info(self, prompt: str, announced_tokens: int) -> str:
         """프롬프트에 토큰 제한 정보 추가"""
         return f"""
 {prompt}
 
-**중요 지침**: 이 응답은 최대 {max_tokens}토큰으로 제한됩니다. 반드시 이 범위 내에서 완결된 페르소나 정보를 작성하세요. 중간에 잘리지 않도록 각 전문가의 정보를 완전히 작성하고, 마지막 항목까지 완전히 끝내세요.
+**중요 지침**: 이 응답은 최대 {announced_tokens}토큰으로 제한됩니다. 반드시 이 범위 내에서 완결된 페르소나 정보를 작성하세요. 중간에 잘리지 않도록 각 전문가의 정보를 완전히 작성하고, 마지막 항목까지 완전히 끝내세요.
 """
     
     def _parse_expert_personas(self, response: str, panel_size: int) -> List[Dict[str, str]]:

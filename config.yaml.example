@@ -22,7 +22,7 @@ ai:
   # 특정 작업에 더 많은 토큰이 필요한 경우 배수 적용
   token_multipliers:
     persona_generation: 2.0    # 페르소나 생성 (4명의 상세 정보)
-    conclusion: 6.0           # 최종 결론 (종합적 분석)
+    conclusion: 10.0           # 최종 결론 (종합적 분석)
     # briefing, summary, panel_response 등은 기본값(1.0) 사용
   api_key: your_openai_api_key_here
 

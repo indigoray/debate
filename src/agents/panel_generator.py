@@ -68,6 +68,10 @@ class PanelGenerator:
             # 타이핑 속도 가져오기
             typing_speed = get_typing_speed(self.config)
             
+            # 페르소나 생성은 안정성이 중요하므로 고정 토큰 사용
+            actual_max_tokens = self._get_max_tokens('persona_generation')
+            enhanced_prompt = self._enhance_prompt_with_token_info(persona_prompt, actual_max_tokens)
+            
             if typing_speed > 0:
                 # 스트리밍으로 페르소나 생성 과정 출력
                 result = stream_openai_response(
@@ -75,9 +79,9 @@ class PanelGenerator:
                     model=self.config['ai']['model'],
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": persona_prompt}
+                        {"role": "user", "content": enhanced_prompt}
                     ],
-                    max_tokens=self._get_dynamic_max_tokens('persona_generation'),
+                    max_tokens=actual_max_tokens,
                     temperature=self.config['ai']['temperature'],
                     color=Fore.CYAN,
                     typing_speed=typing_speed
@@ -88,9 +92,9 @@ class PanelGenerator:
                     model=self.config['ai']['model'],
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": persona_prompt}
+                        {"role": "user", "content": enhanced_prompt}
                     ],
-                    max_tokens=self._get_dynamic_max_tokens('persona_generation'),
+                    max_tokens=actual_max_tokens,
                     temperature=self.config['ai']['temperature']
                 )
                 result = response.choices[0].message.content
@@ -142,18 +146,13 @@ class PanelGenerator:
         multiplier = multipliers.get(task_type, 1.0)
         return int(base_tokens * multiplier)
     
-    def _get_dynamic_max_tokens(self, task_type: str = "default") -> int:
-        """자연스러운 변화를 위한 동적 max_tokens 계산"""
-        import random
-        
-        # 기본 토큰 계산 (멀티플라이어 적용)
-        base_tokens = self._get_max_tokens(task_type)
-        
-        # max_tokens 이내에서 85%~100% 사이에서 자연스러운 변화
-        # 페르소나 생성은 안정성이 중요하므로 변화폭을 적게 함
-        multiplier = random.uniform(0.85, 1.0)
-        
-        return int(base_tokens * multiplier)
+    def _enhance_prompt_with_token_info(self, prompt: str, max_tokens: int) -> str:
+        """프롬프트에 토큰 제한 정보 추가"""
+        return f"""
+{prompt}
+
+**중요 지침**: 이 응답은 최대 {max_tokens}토큰으로 제한됩니다. 반드시 이 범위 내에서 완결된 페르소나 정보를 작성하세요. 중간에 잘리지 않도록 각 전문가의 정보를 완전히 작성하고, 마지막 항목까지 완전히 끝내세요.
+"""
     
     def _parse_expert_personas(self, response: str, panel_size: int) -> List[Dict[str, str]]:
         """AI 응답에서 전문가 정보 파싱 (개선된 버전)"""

@@ -48,6 +48,10 @@ class ResponseGenerator:
             # 타이핑 속도 가져오기
             typing_speed = get_typing_speed(self.config)
             
+            # 동적 토큰 계산
+            actual_max_tokens = self._get_dynamic_max_tokens()
+            enhanced_prompt = self._enhance_prompt_with_token_info(briefing_prompt, actual_max_tokens)
+            
             if typing_speed > 0:
                 # 스트리밍으로 브리핑 생성
                 result = stream_openai_response(
@@ -55,9 +59,9 @@ class ResponseGenerator:
                     model=self.config['ai']['model'],
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": briefing_prompt}
+                        {"role": "user", "content": enhanced_prompt}
                     ],
-                    max_tokens=self._get_dynamic_max_tokens(),
+                    max_tokens=actual_max_tokens,
                     temperature=self.config['ai']['temperature'],
                     color=Fore.MAGENTA,
                     typing_speed=typing_speed
@@ -68,9 +72,9 @@ class ResponseGenerator:
                     model=self.config['ai']['model'],
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": briefing_prompt}
+                        {"role": "user", "content": enhanced_prompt}
                     ],
-                    max_tokens=self._get_dynamic_max_tokens(),
+                    max_tokens=actual_max_tokens,
                     temperature=self.config['ai']['temperature']
                 )
                 result = response.choices[0].message.content
@@ -95,14 +99,18 @@ class ResponseGenerator:
             
             client = openai.OpenAI(api_key=self.api_key)
             
+            # 동적 토큰 계산
+            actual_max_tokens = self._get_dynamic_max_tokens()
+            enhanced_prompt = self._enhance_prompt_with_token_info(summary_prompt, actual_max_tokens)
+            
             # 스트리밍으로 요약 생성 (출력 없이 생성만)
             response = client.chat.completions.create(
                 model=self.config['ai']['model'],
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": summary_prompt}
+                    {"role": "user", "content": enhanced_prompt}
                 ],
-                max_tokens=self._get_dynamic_max_tokens(),
+                max_tokens=actual_max_tokens,
                 temperature=self.config['ai']['temperature']
             )
             
@@ -174,6 +182,10 @@ class ResponseGenerator:
             # 타이핑 속도 가져오기
             typing_speed = get_typing_speed(self.config)
             
+            # 동적 토큰 계산
+            actual_max_tokens = self._get_dynamic_max_tokens('conclusion')
+            enhanced_prompt = self._enhance_prompt_with_token_info(conclusion_prompt, actual_max_tokens)
+            
             if typing_speed > 0:
                 # 스트리밍으로 결론 생성
                 result = stream_openai_response(
@@ -181,9 +193,9 @@ class ResponseGenerator:
                     model=self.config['ai']['model'],
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": conclusion_prompt}
+                        {"role": "user", "content": enhanced_prompt}
                     ],
-                    max_tokens=self._get_dynamic_max_tokens('conclusion'),
+                    max_tokens=actual_max_tokens,
                     temperature=self.config['ai']['temperature'],
                     color=Fore.CYAN,
                     typing_speed=typing_speed
@@ -194,9 +206,9 @@ class ResponseGenerator:
                     model=self.config['ai']['model'],
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": conclusion_prompt}
+                        {"role": "user", "content": enhanced_prompt}
                     ],
-                    max_tokens=self._get_dynamic_max_tokens('conclusion'),
+                    max_tokens=actual_max_tokens,
                     temperature=self.config['ai']['temperature']
                 )
                 result = response.choices[0].message.content
@@ -401,3 +413,11 @@ JSON 형태로 답변:
         multiplier = random.uniform(0.8, 1.0)
         
         return int(base_tokens * multiplier)
+    
+    def _enhance_prompt_with_token_info(self, prompt: str, max_tokens: int) -> str:
+        """프롬프트에 토큰 제한 정보 추가"""
+        return f"""
+{prompt}
+
+**중요 지침**: 이 응답은 최대 {max_tokens}토큰으로 제한됩니다. 반드시 이 범위 내에서 완결된 내용을 작성하세요. 중간에 잘리지 않도록 핵심 메시지를 우선적으로 전달하고, 마지막 문장까지 완전히 끝내세요.
+"""

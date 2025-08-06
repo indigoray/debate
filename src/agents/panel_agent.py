@@ -144,6 +144,16 @@ class PanelAgent(Panel):
             
             client = openai.OpenAI(api_key=self.api_key)
             
+            # 실제 적용될 max_tokens 계산
+            actual_max_tokens = self._get_dynamic_max_tokens()
+            
+            # 토큰 정보를 포함한 개선된 프롬프트
+            enhanced_prompt = f"""
+{prompt}
+
+**중요 지침**: 이 응답은 최대 {actual_max_tokens}토큰으로 제한됩니다. 반드시 이 범위 내에서 완결된 발언을 작성하세요. 중간에 잘리지 않도록 핵심 메시지를 우선적으로 전달하고, 마지막 문장까지 완전히 끝내세요.
+"""
+            
             # config에서 타이핑 속도 가져오기
             typing_speed = get_typing_speed(self.config)
             
@@ -154,9 +164,9 @@ class PanelAgent(Panel):
                     model=self.config['ai']['model'],
                     messages=[
                         {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": prompt}
+                        {"role": "user", "content": enhanced_prompt}
                     ],
-                    max_tokens=self._get_dynamic_max_tokens(),
+                    max_tokens=actual_max_tokens,
                     temperature=self.config['ai']['temperature'],
                     color="",  # 패널별 색상은 호출하는 곳에서 처리
                     typing_speed=typing_speed
@@ -167,15 +177,15 @@ class PanelAgent(Panel):
                     model=self.config['ai']['model'],
                     messages=[
                         {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": prompt}
+                        {"role": "user", "content": enhanced_prompt}
                     ],
-                    max_tokens=self._get_dynamic_max_tokens(),
+                    max_tokens=actual_max_tokens,
                     temperature=self.config['ai']['temperature']
                 )
                 result = response.choices[0].message.content
                 print(result)
             
-            self.logger.debug(f"응답 생성: {result[:100]}...")
+            self.logger.debug(f"응답 생성 (토큰 한계: {actual_max_tokens}): {result[:100]}...")
             return result
             
         except Exception as e:

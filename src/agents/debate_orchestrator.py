@@ -777,12 +777,12 @@ class DebateOrchestrator:
                     'recent_statements': recent_statements,
                     'round_type': '근거_논쟁_심화',
                     'targeted_panels': [panel.name for panel in targeted_panels],
-                    'instruction': '패널들의 근거 제시가 완료되었습니다. 추가적인 논쟁이 필요한 경우에만 간단한 질문을 하시고, 그렇지 않으면 라운드를 종료하세요.'
+                    'instruction': f'근거 제시 라운드에서 {[p.name for p in targeted_panels]} 패널들의 근거 교환이 완료되었습니다. 이 두 패널 간의 추가적인 간단한 논쟁이 필요한 경우에만 이들을 다시 지목하여 질문하시고, 그렇지 않으면 라운드를 종료하세요. 절대로 다른 패널을 새롭게 언급하지 마세요.'
                 }
                 
-                # 추가 논쟁 유도 메시지 생성 (제한적)
+                # 추가 논쟁 유도 메시지 생성 (제한적, 기존 참여 패널만)
                 follow_up_message = self.response_generator.generate_dynamic_manager_response(
-                    f"근거 제시 후 논쟁 심화 판단", follow_up_analysis, panel_agents
+                    f"근거 제시 후 논쟁 심화 판단", follow_up_analysis, targeted_panels  # panel_agents 대신 targeted_panels 사용
                 )
                 
                 # 메시지가 의미있는 내용인지 검증 (너무 짧거나 일반적인 내용은 제외)
@@ -795,21 +795,22 @@ class DebateOrchestrator:
                 if has_meaningful_content:
                     self.presenter.display_manager_message(follow_up_message)
                     
-                    # 추가 메시지 분석하여 응답이 필요한지 확인
-                    follow_up_analysis_result = self.response_generator.analyze_manager_message(follow_up_message, panel_agents)
+                    # 추가 메시지 분석하여 응답이 필요한지 확인 (기존 참여 패널만)
+                    follow_up_analysis_result = self.response_generator.analyze_manager_message(follow_up_message, targeted_panels)
                     follow_up_targeted_panels = follow_up_analysis_result.get("targeted_panels", [])
                     
-                    # 구체적으로 지목된 패널이 있으면 응답 진행 (최대 2명까지만)
+                    # 구체적으로 지목된 패널이 있으면 응답 진행 (최대 2명까지만, 기존 참여 패널 중에서만)
                     if follow_up_targeted_panels and "전체" not in follow_up_targeted_panels:
                         follow_up_panels = []
                         for panel_name in follow_up_targeted_panels[:2]:  # 최대 2명까지만
-                            for agent in panel_agents:
+                            # 기존 참여 패널 중에서만 선택
+                            for agent in targeted_panels:
                                 if agent.name == panel_name:
                                     follow_up_panels.append(agent)
                                     break
                         
                         if follow_up_panels and self.config['debate'].get('show_debug_info', False):
-                            print(f"🎯 [디버그] 추가 논쟁 진행 - {[p.name for p in follow_up_panels]} 패널 응답")
+                            print(f"🎯 [디버그] 추가 근거 논쟁 - {[p.name for p in follow_up_panels]} 패널 응답 (기존 참여 패널만)")
                         
                         # 지목된 패널들의 추가 응답 (간단히)
                         for panel in follow_up_panels:

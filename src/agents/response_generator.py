@@ -223,7 +223,7 @@ class ResponseGenerator:
 4. **다음 액션**: 
    - continue_normal: 정상 진행 (지루할 때만 선택)
    - provoke_debate: 논쟁 유도 필요 (추천! 대립각 형성)
-   - change_angle: 새로운 관점 제시 (새로운 시각 도입) {"❌ 쿨다운 중 - 선택 불가" if change_angle_cooldown else "✅ 선택 가능"}
+   - change_angle: 새로운 관점 제시 (새로운 시각 도입) {"❌ 3라운드 이후 또는 쿨다운 중 - 선택 불가" if change_angle_cooldown else "✅ 선택 가능"}
    - pressure_evidence: 근거 요구 (구체적 데이터 압박)
    - focus_clash: 특정 패널 간 직접 대결 (추천! 1:1 논쟁)
 
@@ -232,7 +232,7 @@ class ResponseGenerator:
 **지침**: 
 - **다양성 우선**: 이전 라운드({last_round_type or "없음"})와 같은 타입은 피하고 다른 타입을 선택하세요
 - 연속으로 focus_clash(직접 대결)는 금지! 다른 타입으로 변화를 주세요
-- **쿨다운 제한**: {"change_angle은 쿨다운 중이므로 선택 불가" if change_angle_cooldown else "모든 타입 선택 가능"}
+- **쿨다운 제한**: {"change_angle은 3라운드 이후 또는 쿨다운 중이므로 선택 불가" if change_angle_cooldown else "모든 타입 선택 가능"}
 - 토론이 평범하면 provoke_debate, {"pressure_evidence 중 선택 (change_angle 제외)" if change_angle_cooldown else "change_angle, pressure_evidence 중 선택"}
 - 패널들이 너무 온화하게 동의하면 대립을 유도하세요
 - 구체적인 패널 이름을 활용한 직접적인 질문을 제안하세요

@@ -140,7 +140,8 @@ class DebateOrchestrator:
             analysis = None
             if current_round % analysis_frequency == 0 or current_round == 1:
                 statements_text = [stmt['content'] for stmt in self.all_statements]
-                change_angle_cooldown = current_round - last_change_angle_round < 3  # 2라운드 쿨다운
+                # 새로운 관점은 3라운드 이후부터 + 최소 2라운드 쿨다운
+                change_angle_cooldown = current_round < 3 or (current_round - last_change_angle_round < 3)
                 analysis = self.response_generator.analyze_debate_state(topic, statements_text, last_round_type, change_angle_cooldown)
                 
                 # 디버그 모드에서만 분석 결과 출력

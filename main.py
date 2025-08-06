@@ -63,9 +63,15 @@ def load_config():
                     default_config = {
                         'debate': {
                             'duration_minutes': 10,
-                            'max_turns_per_agent': 3,
+                            'debate_rounds': 3,
                             'panel_size': 4,
-                            'show_debug_info': True
+                            'show_debug_info': True,
+                            'mode': 'dynamic',
+                            'dynamic_settings': {
+                                'max_rounds': 4,
+                                'analysis_frequency': 1,
+                                'intervention_threshold': 'cold'
+                            }
                         },
                         'ai': {
                             'model': 'gpt-4.1',
@@ -82,6 +88,22 @@ def load_config():
                         'logging': {
                             'level': 'INFO',
                             'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                        },
+                        'agents': {
+                            'debate_manager': {
+                                'system_prompt': '당신은 전문적인 토론 진행자입니다. 균형잡힌 토론을 이끌어가세요.',
+                                'response_constraints': {
+                                    'max_length': '간결하고 명확하게 표현하세요. 불필요한 설명은 피하고 핵심만 전달하세요'
+                                },
+                                'additional_instructions': []
+                            },
+                            'panel_agent': {
+                                'base_prompt': '당신은 해당 분야의 전문가입니다. 자신의 전문성을 바탕으로 논리적이고 설득력 있는 의견을 제시하세요.',
+                                'response_constraints': {
+                                    'max_length': '1000자 이내로 간결하고 명확하게 표현하세요'
+                                },
+                                'additional_instructions': []
+                            }
                         }
                     }
                     return default_config, False
@@ -91,9 +113,15 @@ def load_config():
                 default_config = {
                     'debate': {
                         'duration_minutes': 10,
-                        'max_turns_per_agent': 3,
+                        'debate_rounds': 3,
                         'panel_size': 4,
-                        'show_debug_info': True
+                        'show_debug_info': True,
+                        'mode': 'dynamic',
+                        'dynamic_settings': {
+                            'max_rounds': 4,
+                            'analysis_frequency': 1,
+                            'intervention_threshold': 'cold'
+                        }
                     },
                     'ai': {
                         'model': 'gpt-4.1',
@@ -110,6 +138,22 @@ def load_config():
                     'logging': {
                         'level': 'INFO',
                         'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                    },
+                    'agents': {
+                        'debate_manager': {
+                            'system_prompt': '당신은 전문적인 토론 진행자입니다. 균형잡힌 토론을 이끌어가세요.',
+                            'response_constraints': {
+                                'max_length': '간결하고 명확하게 표현하세요. 불필요한 설명은 피하고 핵심만 전달하세요'
+                            },
+                            'additional_instructions': []
+                        },
+                        'panel_agent': {
+                            'base_prompt': '당신은 해당 분야의 전문가입니다. 자신의 전문성을 바탕으로 논리적이고 설득력 있는 의견을 제시하세요.',
+                            'response_constraints': {
+                                'max_length': '1000자 이내로 간결하고 명확하게 표현하세요'
+                            },
+                            'additional_instructions': []
+                        }
                     }
                 }
                 return default_config, False

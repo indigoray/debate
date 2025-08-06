@@ -39,23 +39,48 @@ class DebateOrchestrator:
     
     def _extract_targeted_panel_from_message(self, message: str, panel_agents: List) -> 'Panel':
         """진행자 메시지에서 지목된 패널을 찾아 반환"""
-        # 각 패널 이름에 대해 메시지에서 "패널께서" 형태로 언급되었는지 확인
+        print(f"🎯 [디버그] 패널 감지 시작 - 메시지: {message[:200]}...")
+        print(f"🎯 [디버그] 사용 가능한 패널: {[agent.name for agent in panel_agents]}")
+        
+        # 각 패널 이름에 대해 메시지에서 지목되었는지 확인
         for agent in panel_agents:
-            # 다양한 호칭 패턴 확인
+            # 다양한 호칭 패턴 확인 (더 포괄적으로)
             patterns = [
+                f"{agent.name} 패널께서는",
                 f"{agent.name} 패널께서",
                 f"{agent.name} 패널께",
                 f"{agent.name} 패널은",
+                f"{agent.name} 패널이",
+                f"{agent.name} 패널을",
+                f"{agent.name} 패널에게",
                 f"{agent.name} 패널, ",
                 f"{agent.name} 패널의",
+                f"{agent.name} 님께서는",
+                f"{agent.name} 님께서",
+                f"{agent.name} 님은",
+                f"{agent.name} 님이",
+                f"{agent.name} 님을",
                 f"{agent.name} 님",
-                f"{agent.name}님"
+                f"{agent.name}님께서는",
+                f"{agent.name}님께서",
+                f"{agent.name}님은",
+                f"{agent.name}님이",
+                f"{agent.name}님을",
+                f"{agent.name}님",
+                f"{agent.name}씨는",
+                f"{agent.name}씨가",
+                f"{agent.name}씨",
+                f"{agent.name} 씨는",
+                f"{agent.name} 씨가",
+                f"{agent.name} 씨"
             ]
             
             for pattern in patterns:
                 if pattern in message:
+                    print(f"🎯 [디버그] ✅ 지목된 패널 감지: {agent.name} (패턴: '{pattern}')")
                     return agent
-                    
+        
+        print(f"🎯 [디버그] ❌ 지목된 패널 없음")            
         return None
     
     def announce_debate_format(self, topic: str, duration_minutes: int, panel_agents: List, user_participation: bool = False, user_name: str = None, user_expertise: str = None, system_prompt: str = None) -> None:
@@ -170,23 +195,28 @@ class DebateOrchestrator:
                     self.logger.info(f"토론 분석 결과 (라운드 {current_round}): {analysis}")
             
             # 분석 결과에 따른 진행 방식 결정
+            round_completed = False
             if analysis and analysis.get('next_action') == 'provoke_debate':
-                self._conduct_provoke_round(current_round, topic, panel_agents, analysis)
+                round_completed = self._conduct_provoke_round(current_round, topic, panel_agents, analysis)
                 last_round_type = 'provoke_debate'
             elif analysis and analysis.get('next_action') == 'focus_clash':
-                self._conduct_clash_round(current_round, topic, panel_agents, analysis)
+                round_completed = self._conduct_clash_round(current_round, topic, panel_agents, analysis)
                 last_round_type = 'focus_clash'
             elif analysis and analysis.get('next_action') == 'change_angle':
-                self._conduct_angle_change_round(current_round, topic, panel_agents, analysis)
+                round_completed = self._conduct_angle_change_round(current_round, topic, panel_agents, analysis)
                 last_round_type = 'change_angle'
                 last_change_angle_round = current_round  # 쿨다운 추적용
             elif analysis and analysis.get('next_action') == 'pressure_evidence':
-                self._conduct_evidence_round(current_round, topic, panel_agents, analysis)
+                round_completed = self._conduct_evidence_round(current_round, topic, panel_agents, analysis)
                 last_round_type = 'pressure_evidence'
             else:
                 # 일반적인 라운드 진행
-                self._conduct_normal_round(current_round, panel_agents, analysis)
+                round_completed = self._conduct_normal_round(current_round, panel_agents, analysis)
                 last_round_type = 'continue_normal'
+            
+            # 라운드가 완료되지 않았다면 (예: 진행자만 발언했을 경우) 같은 라운드 계속 진행
+            if not round_completed:
+                current_round -= 1  # 라운드 번호를 되돌림
             
             # 연속으로 차가운 토론 감지 (최소 라운드 이후에만 조기 종료 고려)
             if analysis and analysis.get('temperature') in ['cold', 'stuck']:
@@ -212,7 +242,7 @@ class DebateOrchestrator:
                 )
                 self.presenter.display_manager_message(extension_msg)
     
-    def _conduct_normal_round(self, round_number: int, panel_agents: List, analysis: Dict[str, Any] = None) -> None:
+    def _conduct_normal_round(self, round_number: int, panel_agents: List, analysis: Dict[str, Any] = None) -> bool:
         """일반적인 라운드 진행"""
         # 일반 라운드 헤더 출력
         print(f"\n📝 === 라운드 {round_number}, 일반 토론 === 📝")
@@ -270,8 +300,10 @@ class DebateOrchestrator:
             
             if not agent.is_human:
                 time.sleep(2)
+        
+        return True  # 라운드 완료
     
-    def _conduct_provoke_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
+    def _conduct_provoke_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> bool:
         """논쟁 유도 라운드"""
         # 특별 라운드 헤더 출력
         print(f"\n🔥 === 라운드 {round_number}, 논쟁 유도 === 🔥")
@@ -295,6 +327,8 @@ class DebateOrchestrator:
         targeted_panel = self._extract_targeted_panel_from_message(manager_message, panel_agents)
         
         if targeted_panel:
+            print(f"🎯 [디버그] 지목된 패널 {targeted_panel.name}의 응답 대기 중...")
+            
             # 지목된 패널의 응답 받기
             context = f"직접 반박 요청 - {analysis.get('main_issue', '핵심 쟁점')}"
             statements = [stmt['content'] for stmt in self.all_statements]
@@ -312,22 +346,25 @@ class DebateOrchestrator:
                 'content': response
             })
             
+            print(f"🎯 [디버그] {targeted_panel.name} 패널 응답 완료")
+            
             if not targeted_panel.is_human:
                 time.sleep(2)
-        else:
-            # 지목된 패널이 없으면 기존 방식으로 처리 (처음 2명)
-            selected_agents = panel_agents[:min(2, len(panel_agents))]
             
-            for i, agent in enumerate(selected_agents):
-                if i > 0:  # 첫 번째는 이미 진행자 메시지에서 처리됨
-                    # 추가 패널들: 간단한 발언권 넘김
-                    direct_question = self.response_generator.generate_manager_message(
-                        "발언권 넘김", f"패널 이름: {agent.name} - 이어서 의견을 말씀해 주시기 바랍니다."
-                    )
-                    self.presenter.display_manager_message(direct_question)
+            # 지목된 패널이 응답한 후, 다른 패널들도 추가 반응할 기회 제공
+            other_panels = [agent for agent in panel_agents if agent.name != targeted_panel.name]
+            
+            # 2명까지 추가 의견 (전체가 아닌 일부만)
+            selected_others = other_panels[:min(2, len(other_panels))]
+            
+            for i, agent in enumerate(selected_others):
+                # 추가 의견 요청
+                follow_up_msg = self.response_generator.generate_manager_message(
+                    "발언권 넘김", f"패널 이름: {agent.name} - 방금 {targeted_panel.name} 패널의 발언에 대한 의견이 있으시면 간단히 말씀해 주시기 바랍니다."
+                )
+                self.presenter.display_manager_message(follow_up_msg)
                 
-                # 해당 패널의 응답 받기
-                context = f"직접 반박 요청 - {analysis.get('main_issue', '핵심 쟁점')}"
+                context = f"추가 반응 - {targeted_panel.name} 패널 발언에 대한 의견"
                 statements = [stmt['content'] for stmt in self.all_statements]
                 
                 if agent.is_human:
@@ -339,14 +376,19 @@ class DebateOrchestrator:
                 
                 self.all_statements.append({
                     'agent_name': agent.name,
-                    'stage': f'논쟁 유도 라운드 {round_number}',
+                    'stage': f'논쟁 유도 라운드 {round_number} 추가 반응',
                     'content': response
                 })
                 
                 if not agent.is_human:
                     time.sleep(2)
+            
+            return True  # 지목된 패널이 응답했으므로 라운드 완료
+        else:
+            print(f"🎯 [디버그] ❌ 지목된 패널을 찾을 수 없음 - 라운드 미완료로 처리")
+            return False  # 지목된 패널이 없으므로 라운드 미완료
     
-    def _conduct_clash_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
+    def _conduct_clash_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> bool:
         """패널 간 직접 대결 라운드 - 진짜 1:1 대결"""
         # 특별 라운드 헤더 출력
         print(f"\n⚔️  === 라운드 {round_number}, 직접 대결 === ⚔️")
@@ -473,8 +515,10 @@ class DebateOrchestrator:
                 
                 if not agent.is_human:
                     time.sleep(1)
+        
+        return True  # 라운드 완료
     
-    def _conduct_angle_change_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
+    def _conduct_angle_change_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> bool:
         """새로운 관점 제시 라운드"""
         # 특별 라운드 헤더 출력
         print(f"\n🔄 === 라운드 {round_number}, 새로운 관점 === 🔄")
@@ -525,8 +569,10 @@ class DebateOrchestrator:
             
             if not agent.is_human:
                 time.sleep(2)
+        
+        return True  # 라운드 완료
     
-    def _conduct_evidence_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> None:
+    def _conduct_evidence_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> bool:
         """근거 요구 라운드"""
         # 특별 라운드 헤더 출력
         print(f"\n📋 === 라운드 {round_number}, 근거 제시 === 📋")
@@ -550,6 +596,8 @@ class DebateOrchestrator:
         targeted_panel = self._extract_targeted_panel_from_message(manager_message, panel_agents)
         
         if targeted_panel:
+            print(f"🎯 [디버그] 지목된 패널 {targeted_panel.name}의 근거 제시 대기 중...")
+            
             # 지목된 패널의 응답 받기
             context = f"근거 제시 요청"
             statements = [stmt['content'] for stmt in self.all_statements]
@@ -567,19 +615,25 @@ class DebateOrchestrator:
                 'content': response
             })
             
+            print(f"🎯 [디버그] {targeted_panel.name} 패널 근거 제시 완료")
+            
             if not targeted_panel.is_human:
                 time.sleep(2)
-        else:
-            # 지목된 패널이 없으면 모든 패널에게 발언권 (기존 방식)
-            for i, agent in enumerate(panel_agents, 1):
-                if i > 1:  # 첫 번째는 이미 진행자 메시지에서 처리됨
-                    # 나머지 패널들: 간단한 발언권 넘김
-                    evidence_request = self.response_generator.generate_manager_message(
-                        "발언권 넘김", f"패널 이름: {agent.name} - 이어서 근거를 제시해 주시기 바랍니다."
-                    )
-                    self.presenter.display_manager_message(evidence_request)
+            
+            # 지목된 패널이 응답한 후, 다른 패널들도 추가 근거나 의견 제시 기회 제공
+            other_panels = [agent for agent in panel_agents if agent.name != targeted_panel.name]
+            
+            # 2명까지 추가 의견 (전체가 아닌 일부만)
+            selected_others = other_panels[:min(2, len(other_panels))]
+            
+            for i, agent in enumerate(selected_others):
+                # 추가 근거 요청
+                follow_up_msg = self.response_generator.generate_manager_message(
+                    "발언권 넘김", f"패널 이름: {agent.name} - {targeted_panel.name} 패널의 근거에 대한 추가 의견이나 반박 근거가 있으시면 말씀해 주시기 바랍니다."
+                )
+                self.presenter.display_manager_message(follow_up_msg)
                 
-                context = f"근거 제시 요청"
+                context = f"추가 근거 - {targeted_panel.name} 패널 근거에 대한 의견"
                 statements = [stmt['content'] for stmt in self.all_statements]
                 
                 if agent.is_human:
@@ -591,16 +645,17 @@ class DebateOrchestrator:
                 
                 self.all_statements.append({
                     'agent_name': agent.name,
-                    'stage': f'근거 제시 라운드 {round_number}',
+                    'stage': f'근거 제시 라운드 {round_number} 추가 반응',
                     'content': response
                 })
                 
-                if i < len(panel_agents):
-                    next_message = self.response_generator.generate_manager_message("다음 발언자", "다음 패널도 근거를 제시해주시기 바랍니다.")
-                    self.presenter.display_manager_message(next_message)
-                
                 if not agent.is_human:
                     time.sleep(2)
+            
+            return True  # 지목된 패널이 응답했으므로 라운드 완료
+        else:
+            print(f"🎯 [디버그] ❌ 지목된 패널을 찾을 수 없음 - 라운드 미완료로 처리")
+            return False  # 지목된 패널이 없으므로 라운드 미완료
     
     def _conduct_initial_opinions_stage(self, topic: str, panel_agents: List) -> None:
         """1단계: 초기 의견 발표"""

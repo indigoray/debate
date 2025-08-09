@@ -26,7 +26,7 @@ AI 기반의 콘솔 애플리케이션으로, 사용자가 입력한 토론 주�
 
 - **언어**: Python 3.11+
 - **AI Framework**: AutoGen (Multi-Agent Framework)
-- **AI 모델**: OpenAI GPT-4.1
+- **AI 모델**: OpenAI GPT-5
 
 
 ## 📦 설치 및 실행

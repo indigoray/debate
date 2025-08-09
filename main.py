@@ -74,7 +74,7 @@ def load_config():
                             }
                         },
                         'ai': {
-                            'model': 'gpt-4.1',
+                            'model': 'gpt-5',
                             'temperature': 0.7,
                             'max_tokens': 1500,
                             'token_multipliers': {
@@ -128,7 +128,7 @@ def load_config():
                         }
                     },
                     'ai': {
-                        'model': 'gpt-4.1',
+                        'model': 'gpt-5',
                         'temperature': 0.7,
                         'max_tokens': 1500,
                         'token_multipliers': {

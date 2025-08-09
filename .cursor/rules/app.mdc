@@ -60,7 +60,7 @@ description: Debate_agents 앱의 핵심 개념과 아키텍처 정의
 
 - **언어**: Python 3.11+
 - **AI Framework**: AutoGen (Multi-Agent Framework)
-- **AI 모델**: OpenAI GPT-4.1
+- **AI 모델**: OpenAI GPT-5
 - **가상환경**: Python venv 
 - **의존성 관리**: requirements.txt
 

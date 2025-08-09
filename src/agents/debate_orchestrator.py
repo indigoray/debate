@@ -132,6 +132,7 @@ class DebateOrchestrator:
         
         current_round = 0
         consecutive_cold_rounds = 0
+        consecutive_failed_rounds = 0  # 연속 실패한 라운드 카운터 추가
         last_round_type = None  # 이전 라운드 타입 기록
         last_change_angle_round = -10  # change_angle이 마지막으로 실행된 라운드 (쿨다운 추적)
         
@@ -170,10 +171,23 @@ class DebateOrchestrator:
                 round_completed = self._conduct_normal_round(current_round, panel_agents, analysis)
                 last_round_type = 'continue_normal'
             
-            # 라운드가 완료되지 않았다면 (예: 진행자만 발언했을 경우) 같은 라운드 계속 진행
+            # 라운드가 완료되지 않았다면 (예: 진행자가 지목할 패널을 찾지 못한 경우) 같은 라운드 계속 진행
             if not round_completed:
                 current_round -= 1  # 라운드 번호를 되돌림
+                consecutive_failed_rounds += 1
+                if self.config['debate'].get('show_debug_info', False):
+                    print(f"🔄 [라운드 재시도] 라운드 {current_round + 1} 재시도 - 유효한 패널 지목 실패 ({consecutive_failed_rounds}/3)")
+                
+                # 연속으로 3번 실패하면 일반 라운드로 강제 전환
+                if consecutive_failed_rounds >= 3:
+                    if self.config['debate'].get('show_debug_info', False):
+                        print(f"⚠️ [강제 전환] 연속 3회 라운드 실패로 일반 라운드로 강제 전환")
+                    current_round += 1  # 라운드 번호 복원
+                    round_completed = self._conduct_normal_round(current_round, panel_agents, analysis)
+                    consecutive_failed_rounds = 0  # 실패 카운터 리셋
+                    last_round_type = 'forced_normal'
             else:
+                consecutive_failed_rounds = 0  # 성공하면 실패 카운터 리셋
                 # 라운드 완료 시 명확한 전환 신호 출력
                 if self.config['debate'].get('show_debug_info', False):
                     print(f"🏁 [라운드 완료] 라운드 {current_round} 완료 - 다음 라운드로 전환")
@@ -181,6 +195,11 @@ class DebateOrchestrator:
                     print(f"\n{'='*60}")
                     print(f"🏁 라운드 {current_round} 완료")
                     print(f"{'='*60}\n")
+                
+                # 라운드 간 자연스러운 전환을 위한 잠시 대기
+                if not self.config['debate'].get('show_debug_info', False):
+                    import time
+                    time.sleep(1)
             
             # 연속으로 차가운 토론 감지 (최소 라운드 이후에만 조기 종료 고려)
             if analysis and analysis.get('temperature') in ['cold', 'stuck']:
@@ -274,7 +293,7 @@ class DebateOrchestrator:
         print("💥 패널 간 직접적인 반박과 논쟁을 유도합니다")
         print("=" * 50)
         
-        # 동적 진행자 메시지 생성 및 출력
+        # 동적 진행자 메시지 생성
         recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
         context_info = f"논쟁 유도 라운드 {round_number} 시작"
         enhanced_analysis = analysis.copy()
@@ -285,9 +304,8 @@ class DebateOrchestrator:
         manager_message = self.response_generator.generate_dynamic_manager_response(
             context_info, enhanced_analysis, panel_agents, round_number
         )
-        self.presenter.display_manager_message(manager_message)
         
-        # 진행자 메시지를 LLM으로 분석하여 지목된 패널들과 응답 방식 파악
+        # 진행자 메시지를 먼저 분석하여 지목된 패널들과 응답 방식 파악
         message_analysis = self.response_generator.analyze_manager_message(manager_message, panel_agents)
         targeted_panel_names = message_analysis.get("targeted_panels", [])
         response_type = message_analysis.get("response_type", "free")
@@ -297,6 +315,9 @@ class DebateOrchestrator:
             if self.config['debate'].get('show_debug_info', False):
                 print(f"🎯 [디버그] ❌ 구체적으로 지목된 패널이 없음 - 라운드 미완료로 처리")
             return False  # 구체적으로 지목된 패널이 없으므로 라운드 미완료
+        
+        # 유효한 지목이 확인된 후에만 진행자 메시지 출력
+        self.presenter.display_manager_message(manager_message)
         
         # 지목된 패널들을 실제 에이전트 객체로 변환
         targeted_panels = []
@@ -713,9 +734,8 @@ class DebateOrchestrator:
         manager_message = self.response_generator.generate_dynamic_manager_response(
             context_info, enhanced_analysis, panel_agents, round_number
         )
-        self.presenter.display_manager_message(manager_message)
         
-        # 진행자 메시지를 LLM으로 분석하여 지목된 패널들과 응답 방식 파악
+        # 진행자 메시지를 먼저 분석하여 지목된 패널들과 응답 방식 파악
         message_analysis = self.response_generator.analyze_manager_message(manager_message, panel_agents)
         targeted_panel_names = message_analysis.get("targeted_panels", [])
         response_type = message_analysis.get("response_type", "free")
@@ -725,6 +745,9 @@ class DebateOrchestrator:
             if self.config['debate'].get('show_debug_info', False):
                 print(f"🎯 [디버그] ❌ 구체적으로 지목된 패널이 없음 - 라운드 미완료로 처리")
             return False  # 구체적으로 지목된 패널이 없으므로 라운드 미완료
+        
+        # 유효한 지목이 확인된 후에만 진행자 메시지 출력
+        self.presenter.display_manager_message(manager_message)
         
         # 지목된 패널들을 실제 에이전트 객체로 변환
         targeted_panels = []

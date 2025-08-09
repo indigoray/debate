@@ -335,19 +335,32 @@ JSON 형태로 답변:
             
             # 디버그 모드에서만 LLM 분석 결과 출력
             if self.config['debate'].get('show_debug_info', False):
+                print(f"🤖 [LLM 분석] 진행자 메시지: {message[:100]}...")
+                print(f"🤖 [LLM 분석] 사용 가능한 패널: {panel_names}")
                 print(f"🤖 [LLM 분석] 지목된 패널: {result.get('targeted_panels', [])}")
                 print(f"🤖 [LLM 분석] 응답 방식: {result.get('response_type', 'unknown')}")
                 if result.get('is_clash', False):
                     print(f"🤖 [LLM 분석] 1:1 대결 감지됨")
+                print(f"🤖 [LLM 분석] 원본 LLM 응답: {content}")
             
             return result
             
         except Exception as e:
             self.logger.error(f"토론 진행자 메시지 분석 실패: {e}")
+            
+            # 분석 실패 시 폴백: 메시지에서 패널 이름을 단순 문자열 매칭으로 찾기
+            fallback_panels = []
+            for panel_name in panel_names:
+                if panel_name in message:
+                    fallback_panels.append(panel_name)
+            
+            if self.config['debate'].get('show_debug_info', False):
+                print(f"🔄 [폴백 분석] LLM 분석 실패, 문자열 매칭으로 패널 찾기: {fallback_panels}")
+            
             return {
-                "targeted_panels": [],
-                "response_type": "free",
-                "response_order": [],
+                "targeted_panels": fallback_panels,
+                "response_type": "sequential" if len(fallback_panels) > 1 else "individual",
+                "response_order": fallback_panels,
                 "is_clash": False,
                 "is_all_panels": False
             }
@@ -433,8 +446,10 @@ JSON 형태로 답변:
         
         # 패널 이름들 추출 (구체적 호칭을 위해)
         panel_names = ""
+        panel_name_list = []
         if panel_agents:
-            panel_names = f"참여 패널: {', '.join([agent.name for agent in panel_agents])}"
+            panel_name_list = [agent.name for agent in panel_agents]
+            panel_names = f"참여 패널: {', '.join(panel_name_list)}"
         
         # 라운드 타입별 특별 제약사항
         round_constraints = ""
@@ -469,6 +484,11 @@ JSON 형태로 답변:
 
 위 상황에서 **역동적이고 흥미진진한 토론**을 위한 진행자 발언을 생성해주세요.
 
+**필수 요구사항**:
+- 반드시 참여 패널 목록에서 **구체적인 패널 이름**을 1명 이상 명시하여 발언 요청
+- 사용 가능한 패널: {panel_name_list}
+- 이 중에서 반드시 최소 1명 이상의 패널을 정확한 이름으로 지목해야 함
+
 다음 원칙을 따르세요:
 1. **적극적이고 도전적인 진행**: 온화한 질문보다 직접적이고 도전적인 질문 선호
 2. **구체적인 패널 대 패널 대립 유도**: "A 패널께서는 B 패널의 주장에 어떻게 반박하시겠습니까?"
@@ -476,7 +496,7 @@ JSON 형태로 답변:
 4. **명확한 대립각 형성**: 패널들이 서로 직접 반박하도록 유도
 5. **반복적이거나 뻔한 표현 금지**: "어떻게 생각하십니까?" 같은 평범한 질문 피하기
 6. "[토론 진행자]"로 시작
-7. 구체적인 패널 이름 사용 (모호한 표현 금지)
+7. **반드시 구체적인 패널 이름 사용** (모호한 표현 절대 금지)
 8. **라운드 경계 존중**: 이전 라운드에서 언급되지 않은 패널을 갑자기 호출하지 마세요. 라운드 간 자연스러운 전환을 위해 기존 참여 패널들의 논의를 마무리한 후 새로운 패널을 언급하세요.
 
 **라운드 타입별 톤:**

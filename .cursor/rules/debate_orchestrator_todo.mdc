@@ -351,6 +351,74 @@ python tests/basic_unit_test.py      # 기본 단위 테스트
 
 ---
 
+## 11) dynamic_debate.mdc 정합성 점검 결과 및 TODO
+
+### 현재 구현과 문서의 일치 사항
+- **라운드 5종 구현**: `continue_normal`, `provoke_debate`, `focus_clash`, `change_angle`, `pressure_evidence` 각각 전용 메서드 구현. 라운드별 배너/이모지 헤더 출력 일치.
+- **분석-실행-재분석 루프**: 초기 의견(고정) → 사전 분석 → 라운드 실행 → 사후(post-round) 분석 → 다음 라운드 시작 시 `next_round_analysis` 재사용 흐름 구현. 문서의 라인 20(“라운드 시작 분석 · next_round_analysis 사용”)과 일치.
+- **조기 종료/연장**: 연속 2회 저온 상태 시 조기 종료, 열띤(heated) 상태에서 최대 라운드 도달 시 +1 연장, 원래 `max_rounds`의 1.5배 한도 준수.
+- **경계구간 정책**: 라운드 완료 표기는 유지하되, 경계 구간에서 사회자 불필요 멘트 생략 처리 유지.
+
+### 부분 일치(유도만, 강제 보장 미흡)
+- **라운드 다양성 보장**: 프롬프트에서 “이전 타입 회피”, “focus_clash 연속 금지”를 유도하나, 동일 타입 연속 금지를 강제하는 하드 로직은 미흡.
+
+### 불일치/개선 필요 포인트
+- **조기 종료의 'stuck' 포함**: 문서 "cold 또는 stuck 2연속" 조건 대비, 현재 비교 순서상 `threshold == "cold"`일 때 `stuck` 라운드가 카운트되지 않을 수 있음.
+- **change_angle 쿨다운 범위**: 문서 "실행 후 2라운드 금지" 외에, 구현은 라운드 1~2에서도 일괄 금지(`current_round < 3`)라 과도하게 엄격.
+- **라운드 타입 빈도 목표(30/25/20/15/10%)**: 가중치/페널티 기반 선택 로직 미구현(선택사항이지만 반영 시 일관성 향상).
+- **스마트 패널 선택**: 현재는 단순 선두 2명 선택. 문서의 “개발 중”과 상태 일치하나 후속 구현 필요.
+
+### 즉시 반영 TODO (구체 제안)
+1) 'stuck'을 조기 종료 판정에 포함되도록 온도 비교 보정
+
+```diff
+- order = ["cold", "stuck", "neutral", "heated"]
++ order = ["stuck", "cold", "neutral", "heated"]
+```
+
+또는, 명시적으로 처리:
+
+```python
+temp = post_analysis.get("temperature")
+if temp in {"cold", "stuck"}:
+    consecutive_cold_rounds += 1
+    if consecutive_cold_rounds >= 2 and current_round >= min_rounds:
+        early_end = True
+else:
+    consecutive_cold_rounds = 0
+```
+
+2) change_angle 쿨다운을 “실행 후 2라운드 금지”로만 제한(초반 일괄 금지 제거)
+
+```diff
+- change_angle_cooldown = current_round < 3 or (current_round - last_change_angle_round < 3)
++ change_angle_cooldown = (last_change_angle_round >= 0) and ((current_round - last_change_angle_round) < 3)
+```
+
+3) 라운드 다양성 하드 가드 추가(특히 focus_clash 연속 금지 + 동일 타입 연속 회피)
+
+```python
+proposed = (analysis or {}).get("next_action", "continue_normal")
+if last_round_type == "focus_clash" and proposed == "focus_clash":
+    proposed = "provoke_debate"
+if last_round_type == proposed:
+    proposed = "provoke_debate" if proposed != "provoke_debate" else "continue_normal"
+```
+
+4) (선택) 라운드 타입 빈도 목표 근사: 간단한 카운터/페널티로 가중치 재조정
+
+```python
+round_counts = {t: 0 for t in [
+    "continue_normal","provoke_debate","focus_clash","change_angle","pressure_evidence"]}
+# 각 라운드 종료 시 업데이트
+round_counts[last_round_type] = round_counts.get(last_round_type, 0) + 1
+# 제안 타입 선택 시 최근 사용이 적은 타입에 보너스, 동일 연속/쿨다운은 페널티 적용
+```
+
+5) (옵션) 라운드 헤더 포맷을 문서 예시에 더 가깝게 세분화(현행 이모지/배너 구조는 이미 충분히 근접)
+
+---
+
 ## 마무리
 
 위 **버그 픽스 + 전략/상태 분리**만으로도 토론 흐름 제어의 예측 가능성이 크게 올라갑니다. 이후에는 각 전략을 **독립 유닛테스트**로 검증하면서, LLM 분석 실패 시 폴백이 항상 안전하게 작동하는지(무한루프 방지)만 꾸준히 체크하시면 안정성이 빠르게 확보됩니다.

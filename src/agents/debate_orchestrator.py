@@ -180,7 +180,6 @@ class DebateOrchestrator:
         dynamic_settings = self.config['debate'].get('dynamic_settings', {})
         min_rounds = self.debate_rounds  # 최소 라운드 수
         max_rounds = dynamic_settings.get('max_rounds', 6)  # 최대 라운드 수
-        analysis_frequency = dynamic_settings.get('analysis_frequency', 2)
         intervention_threshold = dynamic_settings.get('intervention_threshold', 'cold')
         
         # 1단계: 초기 의견 발표 (고정)
@@ -196,22 +195,22 @@ class DebateOrchestrator:
         consecutive_failed_rounds = 0  # 연속 실패한 라운드 카운터 추가
         last_round_type = None  # 이전 라운드 타입 기록
         last_change_angle_round = -10  # change_angle이 마지막으로 실행된 라운드 (쿨다운 추적)
+
+        # 1라운드 시작을 위한 초기 분석을 초기 의견 직후에 수행하고 캐싱
+        initial_statements_text = [stmt['content'] for stmt in self.all_statements]
+        initial_change_angle_cooldown = True  # 1라운드는 항상 change_angle 금지
+        next_round_analysis = self.response_generator.analyze_debate_state(
+            topic, initial_statements_text, last_round_type, initial_change_angle_cooldown
+        )
+        next_round_analysis = self._validate_analysis(next_round_analysis, panel_agents)
         
         while current_round < max_rounds:
             current_round += 1
             
-            # 토론 상태 분석 (지정된 빈도로)
-            analysis = None
-            if current_round % analysis_frequency == 0 or current_round == 1:
-                statements_text = [stmt['content'] for stmt in self.all_statements]
-                # 새로운 관점은 3라운드 이후부터 + 최소 2라운드 쿨다운
-                change_angle_cooldown = current_round < 3 or (current_round - last_change_angle_round < 3)
-                analysis = self.response_generator.analyze_debate_state(topic, statements_text, last_round_type, change_angle_cooldown)
-                analysis = self._validate_analysis(analysis, panel_agents)
-                
-                # 디버그 모드에서만 분석 결과 출력
-                if self.config['debate'].get('show_debug_info', False):
-                    self.logger.info(f"토론 분석 결과 (라운드 {current_round}): {analysis}")
+            # 라운드 시작 분석: 이전 라운드 사후 분석 결과를 재사용
+            analysis = next_round_analysis or {"next_action": "continue_normal", "temperature": "neutral"}
+            if self.config['debate'].get('show_debug_info', False):
+                self.logger.info(f"토론 시작 분석 (라운드 {current_round}): {analysis}")
             
             # 분석 결과에 따른 진행 방식 결정
             round_completed = False
@@ -243,37 +242,40 @@ class DebateOrchestrator:
                 # 즉시 폴백: Normal 1회 시도 후 다음 라운드로 진행
                 current_round += 1  # 라운드 번호 복원
                 _ = self._conduct_normal_round(current_round, panel_agents, analysis)
-                self.presenter.display_round_complete(current_round)
                 consecutive_failed_rounds = 0
                 last_round_type = 'forced_normal'
             else:
                 consecutive_failed_rounds = 0  # 성공하면 실패 카운터 리셋
-                # 라운드 완료 시 명확한 전환 신호 출력
-                self.presenter.display_round_complete(current_round)
-            
-            # 연속으로 차가운 토론 감지 (최소 라운드 이후에만 조기 종료 고려)
-            if analysis and self._temperature_leq_threshold(analysis.get('temperature'), intervention_threshold):
+
+            # === 라운드 내부 종료 직전: 사후(post-round) 분석으로 조기 종료/연장 판단 ===
+            statements_text = [stmt['content'] for stmt in self.all_statements]
+            change_angle_cooldown = current_round < 3 or (current_round - last_change_angle_round < 3)
+            post_analysis = self.response_generator.analyze_debate_state(
+                topic, statements_text, last_round_type, change_angle_cooldown
+            )
+            post_analysis = self._validate_analysis(post_analysis, panel_agents)
+            # 다음 라운드 시작 시 사용할 분석 결과로 캐싱
+            next_round_analysis = post_analysis
+
+            early_end = False
+            if self._temperature_leq_threshold(post_analysis.get('temperature'), intervention_threshold):
                 consecutive_cold_rounds += 1
                 if consecutive_cold_rounds >= 2 and current_round >= min_rounds:
-                    # 최소 라운드를 만족한 경우에만 조기 종료 고려
-                    early_end_analysis = {"intervention": "토론이 충분히 진행되었으므로 마무리하겠습니다."}
-                    early_end_msg = self.response_generator.generate_dynamic_manager_response(
-                        "토론 정리가 필요한 시점", early_end_analysis, panel_agents, current_round
-                    )
-                    self.presenter.display_manager_message(early_end_msg)
-                    break
+                    early_end = True
             else:
                 consecutive_cold_rounds = 0
-            
+
             # 토론이 매우 활발하면 추가 라운드 허용 (단, 원래 설정의 1.5배까지만)
             original_max_rounds = dynamic_settings.get('max_rounds', 6)
-            if (analysis and analysis.get('temperature') == 'heated' and 
+            if (post_analysis.get('temperature') == 'heated' and 
                 current_round == max_rounds and max_rounds < int(original_max_rounds * 1.5)):
                 max_rounds += 1  # 열띤 토론 시 +1 라운드 연장
-                extension_msg = self.response_generator.generate_dynamic_manager_response(
-                    "열띤 토론으로 인한 연장", {"intervention": "토론이 매우 활발하여 1라운드 더 진행하겠습니다."}, panel_agents, current_round
-                )
-                self.presenter.display_manager_message(extension_msg)
+
+            # 라운드 완료 표시는 유지하되, 경계구간에서는 사회자 발언을 하지 않음
+            self.presenter.display_round_complete(current_round)
+
+            if early_end:
+                break
     
     def _conduct_normal_round(self, round_number: int, panel_agents: List, analysis: Dict[str, Any] = None) -> bool:
         """일반적인 라운드 진행"""
@@ -432,57 +434,63 @@ class DebateOrchestrator:
                 follow_up_message = self.response_generator.generate_dynamic_manager_response(
                     f"논쟁 후 확산 판단", follow_up_analysis, targeted_panels, round_number  # panel_agents 대신 targeted_panels 사용
                 )
-                
+
                 # 메시지가 의미있는 내용인지 검증
                 meaningful_keywords = ['반박', '의견', '어떻게', '생각', '주장', '논리']
                 has_meaningful_content = (follow_up_message and 
-                                        len(follow_up_message.strip()) > 50 and
-                                        any(keyword in follow_up_message for keyword in meaningful_keywords))
-                
-                # 의미있는 추가 메시지가 생성되었다면 패널들의 응답을 받음
+                                          len(follow_up_message.strip()) > 50 and
+                                          any(keyword in follow_up_message for keyword in meaningful_keywords))
+
+                # 추가 메시지 분석하여 응답이 필요한지 확인 (기존 참여 패널만)
+                follow_up_targeted_panels: list[str] = []
                 if has_meaningful_content:
-                    self.presenter.display_manager_message(follow_up_message)
-                    
-                    # 추가 메시지 분석하여 응답이 필요한지 확인 (기존 참여 패널만)
-                    follow_up_analysis_result = self.response_generator.analyze_manager_message(follow_up_message, targeted_panels)
+                    follow_up_analysis_result = self.response_generator.analyze_manager_message(
+                        follow_up_message, targeted_panels
+                    )
                     follow_up_targeted_panels = follow_up_analysis_result.get("targeted_panels", [])
-                    
-                    # 구체적으로 지목된 패널이 있으면 응답 진행 (최대 2명까지만)
-                    if follow_up_targeted_panels and "전체" not in follow_up_targeted_panels:
-                        follow_up_panels = []
-                        for panel_name in follow_up_targeted_panels[:2]:  # 최대 2명까지만
-                            # 기존 참여 패널 중에서만 선택
-                            for agent in targeted_panels:
-                                if agent.name == panel_name:
-                                    follow_up_panels.append(agent)
-                                    break
-                        
-                        if follow_up_panels and self.config['debate'].get('show_debug_info', False):
-                            self.presenter.display_debug_line(f"🎯 [디버그] 추가 논쟁 확산 - {[p.name for p in follow_up_panels]} 패널 응답")
-                        
-                        # 지목된 패널들의 추가 응답
-                        for panel in follow_up_panels:
-                            context = f"논쟁 확산 - 추가 의견"
-                            statements = [stmt['content'] for stmt in self.all_statements]
-                            
-                            if panel.is_human:
-                                response = panel.respond_to_debate(context, statements)
-                                self.presenter.display_human_response(response)
-                            else:
-                                self.presenter.display_line_break()
-                                response = panel.respond_to_debate(context, statements)
-                            
-                            self.all_statements.append({
-                                'agent_name': panel.name,
-                                'stage': f'논쟁 유도 라운드 {round_number} 확산',
-                                'content': response
-                            })
-                            
-                            if not panel.is_human:
-                                self._sleep(2)
-                    else:
-                        if self.config['debate'].get('show_debug_info', False):
-                            self.presenter.display_debug_line(f"🎯 [디버그] 추가 논쟁 메시지가 있지만 지목된 패널이 명확하지 않아 응답 생략")
+
+                # 타깃 패널이 확인된 경우에만 사회자 메시지 출력 및 추가 응답 진행
+                if has_meaningful_content and follow_up_targeted_panels and "전체" not in follow_up_targeted_panels:
+                    self.presenter.display_manager_message(follow_up_message)
+
+                    follow_up_panels = []
+                    for panel_name in follow_up_targeted_panels[:2]:  # 최대 2명까지만
+                        # 기존 참여 패널 중에서만 선택
+                        for agent in targeted_panels:
+                            if agent.name == panel_name:
+                                follow_up_panels.append(agent)
+                                break
+
+                    if follow_up_panels and self.config['debate'].get('show_debug_info', False):
+                        self.presenter.display_debug_line(
+                            f"🎯 [디버그] 추가 논쟁 확산 - {[p.name for p in follow_up_panels]} 패널 응답"
+                        )
+
+                    # 지목된 패널들의 추가 응답
+                    for panel in follow_up_panels:
+                        context = f"논쟁 확산 - 추가 의견"
+                        statements = [stmt['content'] for stmt in self.all_statements]
+
+                        if panel.is_human:
+                            response = panel.respond_to_debate(context, statements)
+                            self.presenter.display_human_response(response)
+                        else:
+                            self.presenter.display_line_break()
+                            response = panel.respond_to_debate(context, statements)
+
+                        self.all_statements.append({
+                            'agent_name': panel.name,
+                            'stage': f'논쟁 유도 라운드 {round_number} 확산',
+                            'content': response
+                        })
+
+                        if not panel.is_human:
+                            self._sleep(2)
+                else:
+                    if self.config['debate'].get('show_debug_info', False):
+                        self.presenter.display_debug_line(
+                            f"🎯 [디버그] 추가 논쟁 메시지가 타깃이 없거나 비의미적이어서 출력/응답 생략"
+                        )
                 else:
                     if self.config['debate'].get('show_debug_info', False):
                         self.presenter.display_debug_line(f"🎯 [디버그] 추가 논쟁 확산이 필요하지 않다고 판단하여 라운드 완료")

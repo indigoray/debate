@@ -1,3 +1,8 @@
+---
+description: dynamic debate 진행 가이드
+alwaysApply: false
+---
+
 # 🎭 Dynamic 토론 시스템 가이드
 
 ## 📋 개요
@@ -8,62 +13,40 @@
 
 ```mermaid
 flowchart TD
-    A[토론 시작<br/>Dynamic Mode] --> B[1단계: 초기 의견 발표<br/>고정 진행]
-    B --> C{라운드 1<br/>토론 상태 분석}
-    
-    C --> D[분석 결과<br/>temperature: heated/balanced/cold/stuck<br/>main_issue: 핵심 쟁점<br/>missing_perspective: 놓친 관점<br/>next_action: 다음 액션]
-    
-    D --> E{next_action<br/>결정}
-    
-    E -->|continue_normal| F[일반 라운드<br/>• 이전 라운드 정리<br/>• 방향 제시<br/>• 첫 패널 질문<br/>• 모든 패널 순차 발언]
-    
-    E -->|provoke_debate| G[논쟁 유도 라운드<br/>• 이전 → 논쟁 필요성<br/>• 대립각 큰 패널 선택<br/>• 압박 질문<br/>• 직접 반박 유도]
-    
-    E -->|focus_clash| H[직접 대결 라운드<br/>• 이전 → 대결 필요성<br/>• 2명씩 쌍 구성<br/>• 입장 표명 → 반박<br/>• 1:1 논쟁]
-    
-    E -->|change_angle| I[새로운 관점 라운드<br/>• 이전 → 새 관점 필요성<br/>• 놓친 시각 제시<br/>• 모든 패널 새 관점 발언]
-    
-    E -->|pressure_evidence| J[근거 요구 라운드<br/>• 이전 → 근거 필요성<br/>• 구체적 데이터 압박<br/>• 실증적 사례 요구]
-    
-    F --> K[라운드 완료<br/>발언 저장]
-    G --> K
-    H --> K
-    I --> K
-    J --> K
-    
-    K --> L{온도 체크<br/>연속 cold/stuck?}
-    
-    L -->|2회 연속 cold<br/>& 라운드 ≥ 3| M[조기 종료<br/>• 토론 정리 메시지<br/>• 충분한 진행 판단]
-    
-    L -->|heated<br/>& 최대라운드 도달| N[라운드 연장<br/>• 활발한 토론 인정<br/>• +2 라운드 추가]
-    
-    L -->|정상 진행| O{최대 라운드<br/>도달?}
-    
-    N --> O
-    
-    O -->|No| P{analysis_frequency<br/>주기 도달?}
-    
-    P -->|Yes| C
-    P -->|No| Q[다음 라운드<br/>이전 분석 결과 사용]
-    Q --> E
-    
-    O -->|Yes| R[토론 마무리<br/>• 최종 의견 수렴<br/>• 종합 결론]
-    M --> R
-    
-    R --> S[토론 완료<br/>로그 저장]
-    
-    style A fill:#e1f5fe
-    style C fill:#fff3e0
-    style D fill:#f3e5f5
-    style E fill:#e8f5e8
-    style F fill:#fff8e1
-    style G fill:#ffebee
-    style H fill:#fce4ec
-    style I fill:#e0f2f1
-    style J fill:#f1f8e9
-    style L fill:#fff3e0
-    style R fill:#e1f5fe
-    style S fill:#c8e6c9
+    A["토론 시작<br/>Dynamic Mode"] --> B["1단계: 초기 의견 발표<br/>고정 진행"]
+    B --> C["사전 분석(1라운드용)<br/>초기 의견 기반"]
+    C --> D{"라운드 루프<br/>current_round < max_rounds"}
+
+    D --> E["라운드 시작 분석<br/>next_round_analysis 재사용"]
+    E --> F{"next_action<br/>결정"}
+
+    F -->|continue_normal| G["일반 라운드"]
+    F -->|provoke_debate| H["논쟁 유도 라운드"]
+    F -->|focus_clash| I["직접 대결 라운드"]
+    F -->|change_angle| J["새로운 관점 라운드"]
+    F -->|pressure_evidence| K["근거 요구 라운드"]
+
+    G --> L["라운드 완료"]
+    H --> L
+    I --> L
+    J --> L
+    K --> L
+
+    L --> M["사후 분석(post-round)<br/>최신 발언 기반 재분석"]
+    M --> N{"조기 종료 조건 충족?"}
+    N -- 예 --> O["루프 종료 → 마무리 단계"]
+    N -- 아니오 --> P{"연장 조건 충족?"}
+    P -- 예 --> Q["max_rounds += 1"]
+    P -- 아니오 --> R["유지"]
+
+    Q --> S["라운드 완료 표기"]
+    R --> S
+    S --> T{"다음 라운드"}
+    T --> D
+
+    %% 경계구간 정책 (경계에서는 사회자 발언 없음)
+    S:::boundary
+    classDef boundary fill:#f2f2f2,stroke:#999,stroke-dasharray: 5 5;
 ```
 
 ## 📊 토론 상태 분석 시스템
@@ -246,11 +229,7 @@ Dynamic 토론에서는 동일한 라운드 타입이 연속으로 선택되는 
 - 연속 2라운드 `cold` 또는 `stuck` 상태
 - 최소 3라운드 이상 진행 완료
 
-**동작**:
-```
-[토론 진행자] 지금까지 충분히 깊이 있는 논의가 진행되었습니다. 
-각 패널의 입장이 명확해졌으므로 이제 토론을 정리하겠습니다.
-```
+**동작**: 경계구간에서는 공지를 출력하지 않고 곧바로 마무리 단계로 전환합니다.
 
 ### ⏰ 연장 조건
 
@@ -330,7 +309,6 @@ debate:
   # Dynamic 모드 세부 설정
   dynamic_settings:
     max_rounds: 4              # 최대 라운드 수 (권장: 4-6)
-    analysis_frequency: 1      # 몇 라운드마다 토론 상태 분석할지 (1=매 라운드)
     intervention_threshold: "cold"  # 개입 임계점
 ```
 
@@ -339,7 +317,6 @@ debate:
 | 파라미터 | 기본값 | 설명 |
 |----------|--------|------|
 | `max_rounds` | 4 | 최대 진행 가능한 라운드 수 (권장: 4-6) |
-| `analysis_frequency` | 1 | 몇 라운드마다 AI 분석을 수행할지 (1=매 라운드) |
 | `intervention_threshold` | "cold" | 언제부터 적극적 개입을 시작할지 |
 
 ### 🚀 사용법

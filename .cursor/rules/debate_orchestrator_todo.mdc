@@ -11,20 +11,6 @@ alwaysApply: false
 
 1. **문법 오류(Indentation / stray except)** ✅ **수정 완료**
 
-   * `_conduct_clash_round()` 내부:
-
-     ```python
-     enhanced_analysis['round_type'] = '직접_대결'
-                         
-                         challenge_msg = self.response_generator.generate_dynamic_manager_response(
-         context_info, enhanced_analysis, panel_agents, round_number
-     )
-     ```
-
-     위 `challenge_msg` 줄의 들여쓰기가 깨져 있습니다. 정상 들여쓰기로 수정하세요. ✅ **수정 완료**
-   * `_conduct_evidence_round()` 내부:
-     `if False:` 블록 다음에 **대응하는 try가 없는 `except`** 가 남아 있습니다. 이 전체 `if False:` 블록(논쟁 심화 비활성화)과 그 뒤의 `except` 구문을 함께 제거하거나, 필요하다면 `try/except` 를 온전히 구성하세요. 현재 상태는 **실행 불가**입니다. ✅ **수정 완료 - 주석 처리**
-
 2. **반환 타입 불일치 (논리 오류)**
 
    * `_conduct_clash_round()` 상단에서 `len(panel_agents) < 2` 인 경우:
@@ -168,7 +154,7 @@ def validate_analysis(analysis: dict, panel_agents: list) -> dict:
 ```
 
 * `targeted_panels` 가 비면 **전략 내 공통 폴백**(예: `NormalRound`)으로 즉시 전환.
-* `analysis_frequency` 로 인해 분석이 비어 있는 라운드에는 **그냥 Normal**.
+* `analysis_frequency` 제거: 사후 분석 결과를 다음 라운드 시작 분석으로 재사용하여 중복 분석을 줄이고 일관성을 확보합니다.
 
 ---
 
@@ -204,7 +190,7 @@ def validate_analysis(analysis: dict, panel_agents: list) -> dict:
   * `debate.mode ∈ {"static","dynamic"}`
   * `debate.debate_rounds: int >= 1`
   * `debate.dynamic_settings.max_rounds >= debate_rounds`
-  * `analysis_frequency >= 1`
+* (제거됨) `analysis_frequency` 관련 제약은 더 이상 사용하지 않습니다.
   * `intervention_threshold ∈ {"cold","stuck","neutral","heated"}` (실제로 사용)
 
 검증 실패 시 **초기화에서 예외**로 빠르게 실패하도록.

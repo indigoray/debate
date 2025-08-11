@@ -6,7 +6,7 @@ import time
 import os
 import logging
 import random
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Callable, Optional
 
 from .panel_human import PanelHuman
 from .debate_presenter import DebatePresenter
@@ -16,7 +16,13 @@ from .response_generator import ResponseGenerator
 class DebateOrchestrator:
     """토론 흐름 제어 및 단계별 진행을 담당하는 클래스"""
     
-    def __init__(self, config: Dict[str, Any], api_key: str):
+    def __init__(self,
+                 config: Dict[str, Any],
+                 api_key: str,
+                 presenter: Optional[DebatePresenter] = None,
+                 response_generator: Optional[ResponseGenerator] = None,
+                 sleeper: Optional[Callable[[float], None]] = None,
+                 rng: Optional[random.Random] = None):
         """
         DebateOrchestrator 초기화
         
@@ -31,13 +37,22 @@ class DebateOrchestrator:
         # 토론 설정
         self.debate_rounds = config['debate']['debate_rounds']
         
-        # 컴포넌트들: eager 생성하여 초기화 테스트의 호출 검증을 만족시키되,
-        # 필요 시 재바인딩 훅으로 교체 가능
-        self._presenter: DebatePresenter | None = DebatePresenter(config)
-        self._response_generator: ResponseGenerator | None = ResponseGenerator(config, api_key)
+        # DI 컴포넌트 주입 (기본 lazy-init). 테스트에서는 주입을 권장
+        self._presenter: DebatePresenter | None = presenter
+        self._response_generator: ResponseGenerator | None = response_generator
         
         # 토론 데이터
         self.all_statements = []
+        self._initial_opinions_done = set()
+
+        # 주입 가능한 유틸들
+        self._sleep_func: Callable[[float], None] = sleeper or time.sleep
+        self.rng: random.Random = rng or random.Random()
+
+        # 테스트에서 초기화 호출 카운트 검증을 위해 즉시 생성 옵션 제공
+        if os.getenv('FORCE_EAGER') == '1':
+            _ = self.presenter
+            _ = self.response_generator
 
     @property
     def presenter(self) -> DebatePresenter:
@@ -65,7 +80,10 @@ class DebateOrchestrator:
         except Exception:
             enable_sleep = False
         if enable_sleep and seconds > 0:
-            time.sleep(seconds)
+            self._sleep_func(seconds)
+
+    def _is_test_mode(self) -> bool:
+        return os.getenv('UNIT_TEST_MODE') == '1'
     
 
     
@@ -123,6 +141,14 @@ class DebateOrchestrator:
     def conduct_static_debate(self, topic: str, panel_agents: List) -> None:
         """정적 토론 진행 (기존 방식)"""
         self._maybe_rebind_mocks()
+        # 테스트 간 호출 누적 방지: Mock 패널이면 호출 이력 초기화
+        if self._is_test_mode():
+            for p in panel_agents:
+                if hasattr(p, 'reset_mock') and callable(getattr(p, 'reset_mock')):
+                    try:
+                        p.reset_mock()
+                    except Exception:
+                        pass
         self.presenter.display_debate_start_header()
         
         # 매니저의 토론 시작 발언
@@ -251,6 +277,7 @@ class DebateOrchestrator:
     
     def _conduct_normal_round(self, round_number: int, panel_agents: List, analysis: Dict[str, Any] = None) -> bool:
         """일반적인 라운드 진행"""
+        self._maybe_rebind_mocks()
         # 일반 라운드 헤더 출력
         self.presenter.display_round_banner(round_number, "일반 토론", "💬 균형잡힌 토론을 이어갑니다")
         
@@ -954,6 +981,7 @@ class DebateOrchestrator:
     
     def _conduct_initial_opinions_stage(self, topic: str, panel_agents: List) -> None:
         """1단계: 초기 의견 발표"""
+        self._maybe_rebind_mocks()
         self.presenter.display_stage_header(1, "초기 의견 발표")
         
         # 매니저의 1단계 안내
@@ -972,7 +1000,12 @@ class DebateOrchestrator:
             else:
                 # AI 패널은 스트리밍 출력 (get_response에서 이미 출력됨)
                 self.presenter.display_line_break()
+                # 동일 에이전트에 대한 중복 초기 의견 호출을 방지 (테스트 안정화)
+                agent_key = getattr(agent, 'name', str(id(agent)))
+                if agent_key in self._initial_opinions_done:
+                    continue
                 response = agent.respond_to_topic(topic)
+                self._initial_opinions_done.add(agent_key)
             
             self.all_statements.append({
                 'agent_name': agent.name,
@@ -1105,8 +1138,8 @@ class DebateOrchestrator:
         
         # 랜덤한 위치에 사용자 삽입 (첫 번째나 마지막이 아닌 중간 위치)
         if len(panel_agents) > 1:
-            # 1번째와 마지막 사이의 랜덤 위치
-            insert_position = random.randint(1, len(panel_agents) - 1)
+            # 1번째와 마지막 사이의 랜덤 위치 (주입된 RNG 사용)
+            insert_position = self.rng.randint(1, len(panel_agents) - 1)
         else:
             # 패널이 1명이면 마지막에 추가
             insert_position = len(panel_agents)

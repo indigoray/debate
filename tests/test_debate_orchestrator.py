@@ -138,6 +138,8 @@ class TestDebateOrchestrator(unittest.TestCase):
     def test_orchestrator_initialization(self, mock_presenter, mock_response_generator):
         """오케스트레이터 초기화 테스트"""
         self.logger.info("오케스트레이터 초기화 테스트 시작")
+        # 패치가 적용된 상태에서 새 오케스트레이터를 생성하여 호출 기록을 검증
+        _ = DebateOrchestrator(self.config, self.api_key)
         
         # Mock 객체들이 올바르게 생성되었는지 확인
         mock_presenter.assert_called_once_with(self.config)

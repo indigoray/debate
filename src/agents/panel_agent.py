@@ -4,7 +4,12 @@ Panel Agent - 토론 패널 전문가 에이전트
 
 from typing import Dict, Any, List, Optional
 import logging
-from autogen import ConversableAgent
+try:
+    from autogen import ConversableAgent  # type: ignore
+except Exception:  # pragma: no cover - 테스트 환경에서 autogen 미설치 허용
+    class ConversableAgent:  # type: ignore
+        def __init__(self, *_, **__):
+            raise ImportError("AutoGen is required for runtime. Install with 'pip install pyautogen'.")
 from .panel import Panel
 from ..utils.streaming import stream_openai_response, get_typing_speed
 

@@ -115,6 +115,32 @@ class DebatePresenter:
     def display_round_header(self, round_number: int) -> None:
         """라운드 헤더 출력"""
         print(f"\n{Fore.BLUE}--- 토론 라운드 {round_number} ---{Style.RESET_ALL}")
+
+    def display_round_banner(self, round_number: int, title: str, subtitle: str = "") -> None:
+        """라운드 배너/헤더 출력 (일원화)"""
+        print(f"\n{Fore.MAGENTA}=== 라운드 {round_number}, {title} ==={Style.RESET_ALL}")
+        if subtitle:
+            print(subtitle)
+        print("=" * 50)
+
+    def display_section_header(self, title: str) -> None:
+        """구분선이 포함된 섹션 헤더 출력"""
+        print(f"\n{title}")
+        print("=" * 50)
+
+    def display_round_complete(self, round_number: int) -> None:
+        """라운드 완료 표시"""
+        if self.show_debug_info:
+            print(f"🏁 [라운드 완료] 라운드 {round_number} 완료 - 다음 라운드로 전환")
+        else:
+            print(f"\n{'='*60}")
+            print(f"🏁 라운드 {round_number} 완료")
+            print(f"{'='*60}\n")
+
+    def display_debug_line(self, message: str) -> None:
+        """디버그 라인 출력(일원화)"""
+        if self.show_debug_info:
+            print(message)
     
     def display_debate_conclusion_header(self) -> None:
         """토론 마무리 헤더 출력"""

@@ -3,6 +3,7 @@ DebateOrchestrator - 토론 흐름 제어 및 단계별 진행 클래스
 """
 
 import time
+import os
 import logging
 import random
 from typing import Dict, Any, List
@@ -30,17 +31,47 @@ class DebateOrchestrator:
         # 토론 설정
         self.debate_rounds = config['debate']['debate_rounds']
         
-        # 컴포넌트들
-        self.presenter = DebatePresenter(config)
-        self.response_generator = ResponseGenerator(config, api_key)
+        # 컴포넌트들: eager 생성하여 초기화 테스트의 호출 검증을 만족시키되,
+        # 필요 시 재바인딩 훅으로 교체 가능
+        self._presenter: DebatePresenter | None = DebatePresenter(config)
+        self._response_generator: ResponseGenerator | None = ResponseGenerator(config, api_key)
         
         # 토론 데이터
         self.all_statements = []
+
+    @property
+    def presenter(self) -> DebatePresenter:
+        if self._presenter is None:
+            self._presenter = DebatePresenter(self.config)
+        return self._presenter
+
+    @property
+    def response_generator(self) -> ResponseGenerator:
+        if self._response_generator is None:
+            self._response_generator = ResponseGenerator(self.config, self.api_key)
+        return self._response_generator
+
+    def _maybe_rebind_mocks(self) -> None:
+        """테스트에서 패치가 적용되도록 강제 재바인딩 (환경변수로 제어)"""
+        if os.getenv('FORCE_REBIND_MOCKS') == '1':
+            self._presenter = None
+            self._response_generator = None
+
+    # ========= 내부 유틸리티 =========
+    def _sleep(self, seconds: float) -> None:
+        """사람 같은 박자를 위한 지연. 기본적으로 비활성. 설정으로만 활성화."""
+        try:
+            enable_sleep = self.config.get('debate', {}).get('enable_sleep', False)
+        except Exception:
+            enable_sleep = False
+        if enable_sleep and seconds > 0:
+            time.sleep(seconds)
     
 
     
     def announce_debate_format(self, topic: str, duration_minutes: int, panel_agents: List, user_participation: bool = False, user_name: str = None, user_expertise: str = None, system_prompt: str = None) -> None:
         """토론 방식 안내"""
+        self._maybe_rebind_mocks()
         self.presenter.announce_debate_format(topic, duration_minutes, panel_agents, user_participation, user_name, user_expertise)
         
         # 주제 브리핑 생성 및 출력
@@ -53,6 +84,7 @@ class DebateOrchestrator:
     
     def introduce_panels(self, panel_agents: List) -> None:
         """패널 소개"""
+        self._maybe_rebind_mocks()
         self.presenter.display_panel_introduction_header()
         
         # 매니저의 소개 발언
@@ -76,10 +108,11 @@ class DebateOrchestrator:
             
             # 사용자가 아닌 경우만 대기
             if not agent.is_human:
-                time.sleep(1)
+                self._sleep(1)
     
     def conduct_debate(self, topic: str, panel_agents: List) -> None:
         """토론 진행 - config에 따라 static 또는 dynamic 방식 선택"""
+        self._maybe_rebind_mocks()
         debate_mode = self.config['debate'].get('mode', 'static')
         
         if debate_mode == 'dynamic':
@@ -89,6 +122,7 @@ class DebateOrchestrator:
     
     def conduct_static_debate(self, topic: str, panel_agents: List) -> None:
         """정적 토론 진행 (기존 방식)"""
+        self._maybe_rebind_mocks()
         self.presenter.display_debate_start_header()
         
         # 매니저의 토론 시작 발언
@@ -106,6 +140,7 @@ class DebateOrchestrator:
     
     def conduct_dynamic_debate(self, topic: str, panel_agents: List) -> None:
         """동적 토론 진행 (새로운 방식)"""
+        self._maybe_rebind_mocks()
         self.presenter.display_debate_start_header()
         
         # 매니저의 토론 시작 발언
@@ -146,6 +181,7 @@ class DebateOrchestrator:
                 # 새로운 관점은 3라운드 이후부터 + 최소 2라운드 쿨다운
                 change_angle_cooldown = current_round < 3 or (current_round - last_change_angle_round < 3)
                 analysis = self.response_generator.analyze_debate_state(topic, statements_text, last_round_type, change_angle_cooldown)
+                analysis = self._validate_analysis(analysis, panel_agents)
                 
                 # 디버그 모드에서만 분석 결과 출력
                 if self.config['debate'].get('show_debug_info', False):
@@ -176,33 +212,21 @@ class DebateOrchestrator:
                 current_round -= 1  # 라운드 번호를 되돌림
                 consecutive_failed_rounds += 1
                 if self.config['debate'].get('show_debug_info', False):
-                    print(f"🔄 [라운드 재시도] 라운드 {current_round + 1} 재시도 - 유효한 패널 지목 실패 ({consecutive_failed_rounds}/3)")
-                
-                # 연속으로 3번 실패하면 일반 라운드로 강제 전환
-                if consecutive_failed_rounds >= 3:
-                    if self.config['debate'].get('show_debug_info', False):
-                        print(f"⚠️ [강제 전환] 연속 3회 라운드 실패로 일반 라운드로 강제 전환")
-                    current_round += 1  # 라운드 번호 복원
-                    round_completed = self._conduct_normal_round(current_round, panel_agents, analysis)
-                    consecutive_failed_rounds = 0  # 실패 카운터 리셋
-                    last_round_type = 'forced_normal'
+                    self.presenter.display_debug_line(f"🔄 [라운드 재시도] 라운드 {current_round + 1} 재시도 - 유효한 패널 지목 실패 ({consecutive_failed_rounds}/1)")
+
+                # 즉시 폴백: Normal 1회 시도 후 다음 라운드로 진행
+                current_round += 1  # 라운드 번호 복원
+                _ = self._conduct_normal_round(current_round, panel_agents, analysis)
+                self.presenter.display_round_complete(current_round)
+                consecutive_failed_rounds = 0
+                last_round_type = 'forced_normal'
             else:
                 consecutive_failed_rounds = 0  # 성공하면 실패 카운터 리셋
                 # 라운드 완료 시 명확한 전환 신호 출력
-                if self.config['debate'].get('show_debug_info', False):
-                    print(f"🏁 [라운드 완료] 라운드 {current_round} 완료 - 다음 라운드로 전환")
-                else:
-                    print(f"\n{'='*60}")
-                    print(f"🏁 라운드 {current_round} 완료")
-                    print(f"{'='*60}\n")
-                
-                # 라운드 간 자연스러운 전환을 위한 잠시 대기
-                if not self.config['debate'].get('show_debug_info', False):
-                    import time
-                    time.sleep(1)
+                self.presenter.display_round_complete(current_round)
             
             # 연속으로 차가운 토론 감지 (최소 라운드 이후에만 조기 종료 고려)
-            if analysis and analysis.get('temperature') in ['cold', 'stuck']:
+            if analysis and self._temperature_leq_threshold(analysis.get('temperature'), intervention_threshold):
                 consecutive_cold_rounds += 1
                 if consecutive_cold_rounds >= 2 and current_round >= min_rounds:
                     # 최소 라운드를 만족한 경우에만 조기 종료 고려
@@ -219,7 +243,7 @@ class DebateOrchestrator:
             original_max_rounds = dynamic_settings.get('max_rounds', 6)
             if (analysis and analysis.get('temperature') == 'heated' and 
                 current_round == max_rounds and max_rounds < int(original_max_rounds * 1.5)):
-                max_rounds += 1  # 2라운드 -> 1라운드로 축소
+                max_rounds += 1  # 열띤 토론 시 +1 라운드 연장
                 extension_msg = self.response_generator.generate_dynamic_manager_response(
                     "열띤 토론으로 인한 연장", {"intervention": "토론이 매우 활발하여 1라운드 더 진행하겠습니다."}, panel_agents, current_round
                 )
@@ -228,9 +252,7 @@ class DebateOrchestrator:
     def _conduct_normal_round(self, round_number: int, panel_agents: List, analysis: Dict[str, Any] = None) -> bool:
         """일반적인 라운드 진행"""
         # 일반 라운드 헤더 출력
-        print(f"\n📝 === 라운드 {round_number}, 일반 토론 === 📝")
-        print("💬 균형잡힌 토론을 이어갑니다")
-        print("=" * 50)
+        self.presenter.display_round_banner(round_number, "일반 토론", "💬 균형잡힌 토론을 이어갑니다")
         
         # 모든 패널 발언
         for i, agent in enumerate(panel_agents, 1):
@@ -282,16 +304,14 @@ class DebateOrchestrator:
                 pass  # 다음 패널 질문에서 자연스럽게 이어짐
             
             if not agent.is_human:
-                time.sleep(2)
+                self._sleep(2)
         
         return True  # 라운드 완료
     
     def _conduct_provoke_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> bool:
         """논쟁 유도 라운드"""
         # 특별 라운드 헤더 출력
-        print(f"\n🔥 === 라운드 {round_number}, 논쟁 유도 === 🔥")
-        print("💥 패널 간 직접적인 반박과 논쟁을 유도합니다")
-        print("=" * 50)
+        self.presenter.display_round_banner(round_number, "논쟁 유도", "💥 패널 간 직접적인 반박과 논쟁을 유도합니다")
         
         # 동적 진행자 메시지 생성
         recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
@@ -313,7 +333,7 @@ class DebateOrchestrator:
         
         if not targeted_panel_names or "전체" in targeted_panel_names:
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] ❌ 구체적으로 지목된 패널이 없음 - 라운드 미완료로 처리")
+                self.presenter.display_debug_line(f"🎯 [디버그] ❌ 구체적으로 지목된 패널이 없음 - 라운드 미완료로 처리")
             return False  # 구체적으로 지목된 패널이 없으므로 라운드 미완료
         
         # 유효한 지목이 확인된 후에만 진행자 메시지 출력
@@ -329,18 +349,18 @@ class DebateOrchestrator:
         
         if not targeted_panels:
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] ❌ 지목된 패널을 찾을 수 없음 - 라운드 미완료로 처리")
+                self.presenter.display_debug_line(f"🎯 [디버그] ❌ 지목된 패널을 찾을 수 없음 - 라운드 미완료로 처리")
             return False
         
         if self.config['debate'].get('show_debug_info', False):
-            print(f"🎯 [LLM 분석] 지목된 패널들: {[p.name for p in targeted_panels]}")
-            print(f"🎯 [LLM 분석] 응답 방식: {response_type}")
+            self.presenter.display_debug_line(f"🎯 [LLM 분석] 지목된 패널들: {[p.name for p in targeted_panels]}")
+            self.presenter.display_debug_line(f"🎯 [LLM 분석] 응답 방식: {response_type}")
         
         # 응답 방식에 따라 처리
         if response_type == "debate" or is_clash:
             # 논쟁 모드: 지목된 패널들이 서로 논쟁
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] 논쟁 모드로 진행 - {len(targeted_panels)}명 패널 간 논쟁")
+                self.presenter.display_debug_line(f"🎯 [디버그] 논쟁 모드로 진행 - {len(targeted_panels)}명 패널 간 논쟁")
             
             # 1단계: 초기 논쟁
             for i, panel in enumerate(targeted_panels):
@@ -365,10 +385,10 @@ class DebateOrchestrator:
                 })
                 
                 if self.config['debate'].get('show_debug_info', False):
-                    print(f"🎯 [디버그] {panel.name} 패널 응답 완료")
+                    self.presenter.display_debug_line(f"🎯 [디버그] {panel.name} 패널 응답 완료")
                 
                 if not panel.is_human:
-                    time.sleep(2)
+                    self._sleep(2)
             
             # 2단계: 논쟁 확산 (선택적, 1회 제한)
             try:
@@ -411,7 +431,7 @@ class DebateOrchestrator:
                                     break
                         
                         if follow_up_panels and self.config['debate'].get('show_debug_info', False):
-                            print(f"🎯 [디버그] 추가 논쟁 확산 - {[p.name for p in follow_up_panels]} 패널 응답")
+                            self.presenter.display_debug_line(f"🎯 [디버그] 추가 논쟁 확산 - {[p.name for p in follow_up_panels]} 패널 응답")
                         
                         # 지목된 패널들의 추가 응답
                         for panel in follow_up_panels:
@@ -432,23 +452,23 @@ class DebateOrchestrator:
                             })
                             
                             if not panel.is_human:
-                                time.sleep(2)
+                                self._sleep(2)
                     else:
                         if self.config['debate'].get('show_debug_info', False):
-                            print(f"🎯 [디버그] 추가 논쟁 메시지가 있지만 지목된 패널이 명확하지 않아 응답 생략")
+                            self.presenter.display_debug_line(f"🎯 [디버그] 추가 논쟁 메시지가 있지만 지목된 패널이 명확하지 않아 응답 생략")
                 else:
                     if self.config['debate'].get('show_debug_info', False):
-                        print(f"🎯 [디버그] 추가 논쟁 확산이 필요하지 않다고 판단하여 라운드 완료")
+                        self.presenter.display_debug_line(f"🎯 [디버그] 추가 논쟁 확산이 필요하지 않다고 판단하여 라운드 완료")
                         
             except Exception as e:
                 if self.config['debate'].get('show_debug_info', False):
-                    print(f"🎯 [디버그] 논쟁 확산 단계에서 오류 발생, 라운드 종료: {e}")
+                    self.presenter.display_debug_line(f"🎯 [디버그] 논쟁 확산 단계에서 오류 발생, 라운드 종료: {e}")
                 # 오류 발생시 라운드를 정상 종료
         
         elif response_type == "sequential":
             # 순차 응답 모드: 지목된 패널들이 순서대로 응답
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] 순차 응답 모드로 진행 - {len(targeted_panels)}명 패널 순차 응답")
+                self.presenter.display_debug_line(f"🎯 [디버그] 순차 응답 모드로 진행 - {len(targeted_panels)}명 패널 순차 응답")
             
             for panel in targeted_panels:
                 context = f"직접 반박 요청 - {analysis.get('main_issue', '핵심 쟁점')}"
@@ -468,16 +488,16 @@ class DebateOrchestrator:
                 })
                 
                 if self.config['debate'].get('show_debug_info', False):
-                    print(f"🎯 [디버그] {panel.name} 패널 응답 완료")
+                    self.presenter.display_debug_line(f"🎯 [디버그] {panel.name} 패널 응답 완료")
                 
                 if not panel.is_human:
-                    time.sleep(2)
+                    self._sleep(2)
         
         else:
             # individual 또는 기타: 첫 번째 지목된 패널만 응답
             panel = targeted_panels[0]
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] 개별 응답 모드로 진행 - {panel.name} 패널 단독 응답")
+                self.presenter.display_debug_line(f"🎯 [디버그] 개별 응답 모드로 진행 - {panel.name} 패널 단독 응답")
             
             context = f"직접 반박 요청 - {analysis.get('main_issue', '핵심 쟁점')}"
             statements = [stmt['content'] for stmt in self.all_statements]
@@ -496,10 +516,10 @@ class DebateOrchestrator:
             })
             
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] {panel.name} 패널 응답 완료")
+                self.presenter.display_debug_line(f"🎯 [디버그] {panel.name} 패널 응답 완료")
             
             if not panel.is_human:
-                time.sleep(2)
+                self._sleep(2)
             
             # 개별 응답인 경우에만 다른 패널들의 추가 반응 기회 제공
             other_panels = [agent for agent in panel_agents if agent.name != panel.name]
@@ -528,25 +548,22 @@ class DebateOrchestrator:
                 })
                 
                 if not agent.is_human:
-                    time.sleep(2)
+                    self._sleep(2)
         
         return True  # 지목된 패널들이 응답했으므로 라운드 완료
     
     def _conduct_clash_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> bool:
         """패널 간 직접 대결 라운드 - 진짜 1:1 대결"""
         # 특별 라운드 헤더 출력
-        print(f"\n⚔️  === 라운드 {round_number}, 직접 대결 === ⚔️")
-        print("🥊 대립각이 큰 2명의 패널이 1:1로 직접 맞서서 토론합니다")
-        print("=" * 60)
+        self.presenter.display_round_banner(round_number, "직접 대결", "🥊 대립각이 큰 2명의 패널이 1:1로 직접 맞서서 토론합니다")
         
         # 가장 대립각이 큰 2명 선택 (단순하게 처음 2명 선택)
         if len(panel_agents) >= 2:
             agent1, agent2 = panel_agents[0], panel_agents[1]
             other_agents = panel_agents[2:]  # 나머지 패널들
         else:
-            # 패널이 2명 미만이면 일반 라운드로 전환
-            self._conduct_normal_round(round_number, panel_agents, analysis)
-            return
+            # 패널이 2명 미만이면 일반 라운드로 전환 (반환값 일관성 유지)
+            return self._conduct_normal_round(round_number, panel_agents, analysis)
         
         # 대결 시작 안내
         recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
@@ -561,8 +578,7 @@ class DebateOrchestrator:
         )
         self.presenter.display_manager_message(challenge_msg)
         
-        print(f"\n🔥 {agent1.name} vs {agent2.name} 직접 대결!")
-        print(f"{'='*50}")
+        self.presenter.display_section_header(f"🔥 {agent1.name} vs {agent2.name} 직접 대결!")
         
         # 첫 번째 패널 입장 표명
         context = f"직접 대결 - 입장 표명"
@@ -627,8 +643,7 @@ class DebateOrchestrator:
         
         # 나머지 패널들의 선택적 참여
         if other_agents:
-            print(f"\n💬 1:1 대결 후 추가 의견")
-            print(f"{'='*40}")
+            self.presenter.display_section_header("💬 1:1 대결 후 추가 의견")
             
             additional_msg = self.response_generator.generate_manager_message(
                 "추가 의견 안내", f"방금 {agent1.name} 패널과 {agent2.name} 패널의 치열한 대결을 보셨습니다. 다른 패널분들께서도 이 논쟁에 대한 추가 의견이 있으시면 간단히 말씀해 주시기 바랍니다."
@@ -658,16 +673,14 @@ class DebateOrchestrator:
                 })
                 
                 if not agent.is_human:
-                    time.sleep(1)
+                    self._sleep(1)
         
         return True  # 라운드 완료
     
     def _conduct_angle_change_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> bool:
         """새로운 관점 제시 라운드"""
         # 특별 라운드 헤더 출력
-        print(f"\n🔄 === 라운드 {round_number}, 새로운 관점 === 🔄")
-        print("💡 토론의 시각을 바꿔서 새로운 관점을 도입합니다")
-        print("=" * 50)
+        self.presenter.display_round_banner(round_number, "새로운 관점", "💡 토론의 시각을 바꿔서 새로운 관점을 도입합니다")
         
         # 전체 패널에게 새로운 관점으로 질문
         for i, agent in enumerate(panel_agents, 1):
@@ -712,16 +725,14 @@ class DebateOrchestrator:
                 self.presenter.display_manager_message(next_message)
             
             if not agent.is_human:
-                time.sleep(2)
+                self._sleep(2)
         
         return True  # 라운드 완료
     
     def _conduct_evidence_round(self, round_number: int, topic: str, panel_agents: List, analysis: Dict[str, Any]) -> bool:
         """근거 요구 라운드"""
         # 특별 라운드 헤더 출력
-        print(f"\n📋 === 라운드 {round_number}, 근거 제시 === 📋")
-        print("🔍 구체적인 데이터와 근거를 요구하여 주장을 검증합니다")
-        print("=" * 50)
+        self.presenter.display_round_banner(round_number, "근거 제시", "🔍 구체적인 데이터와 근거를 요구하여 주장을 검증합니다")
         
         # 동적 진행자 메시지 생성 및 출력
         recent_statements = [stmt['content'] for stmt in self.all_statements[-6:]]
@@ -743,7 +754,7 @@ class DebateOrchestrator:
         
         if not targeted_panel_names or "전체" in targeted_panel_names:
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] ❌ 구체적으로 지목된 패널이 없음 - 라운드 미완료로 처리")
+                self.presenter.display_debug_line(f"🎯 [디버그] ❌ 구체적으로 지목된 패널이 없음 - 라운드 미완료로 처리")
             return False  # 구체적으로 지목된 패널이 없으므로 라운드 미완료
         
         # 유효한 지목이 확인된 후에만 진행자 메시지 출력
@@ -759,18 +770,18 @@ class DebateOrchestrator:
         
         if not targeted_panels:
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] ❌ 지목된 패널을 찾을 수 없음 - 라운드 미완료로 처리")
+                self.presenter.display_debug_line(f"🎯 [디버그] ❌ 지목된 패널을 찾을 수 없음 - 라운드 미완료로 처리")
             return False
         
         if self.config['debate'].get('show_debug_info', False):
-            print(f"🎯 [LLM 분석] 지목된 패널들: {[p.name for p in targeted_panels]}")
-            print(f"🎯 [LLM 분석] 응답 방식: {response_type}")
+            self.presenter.display_debug_line(f"🎯 [LLM 분석] 지목된 패널들: {[p.name for p in targeted_panels]}")
+            self.presenter.display_debug_line(f"🎯 [LLM 분석] 응답 방식: {response_type}")
         
         # 응답 방식에 따라 처리
         if response_type == "debate" or is_clash:
             # 논쟁 모드: 지목된 패널들이 서로 근거 논쟁
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] 근거 논쟁 모드로 진행 - {len(targeted_panels)}명 패널 간 근거 논쟁")
+                self.presenter.display_debug_line(f"🎯 [디버그] 근거 논쟁 모드로 진행 - {len(targeted_panels)}명 패널 간 근거 논쟁")
             
             # 1단계: 초기 근거 제시
             for i, panel in enumerate(targeted_panels):
@@ -795,14 +806,14 @@ class DebateOrchestrator:
                 })
                 
                 if self.config['debate'].get('show_debug_info', False):
-                    print(f"🎯 [디버그] {panel.name} 패널 근거 제시 완료")
+                    self.presenter.display_debug_line(f"🎯 [디버그] {panel.name} 패널 근거 제시 완료")
                 
                 if not panel.is_human:
-                    time.sleep(2)
+                    self._sleep(2)
             
             # 근거 제시 논쟁 모드에서는 즉시 라운드 완료 (follow-up 비활성화)
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🏁 [디버그] 근거 제시 논쟁 완료 - {[p.name for p in targeted_panels]} 패널 간 논쟁 종료, 라운드 완료")
+                self.presenter.display_debug_line(f"🏁 [디버그] 근거 제시 논쟁 완료 - {[p.name for p in targeted_panels]} 패널 간 논쟁 종료, 라운드 완료")
             
             # 기존 논쟁 심화 로직 비활성화 (라운드 경계 명확화를 위해)
             # if False:  # 논쟁 심화 비활성화 - 주석 처리
@@ -882,7 +893,7 @@ class DebateOrchestrator:
         elif response_type == "sequential":
             # 순차 응답 모드: 지목된 패널들이 순서대로 근거 제시
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] 순차 근거 제시 모드로 진행 - {len(targeted_panels)}명 패널 순차 근거 제시")
+                self.presenter.display_debug_line(f"🎯 [디버그] 순차 근거 제시 모드로 진행 - {len(targeted_panels)}명 패널 순차 근거 제시")
             
             for panel in targeted_panels:
                 context = f"근거 제시 요청"
@@ -902,16 +913,16 @@ class DebateOrchestrator:
                 })
                 
                 if self.config['debate'].get('show_debug_info', False):
-                    print(f"🎯 [디버그] {panel.name} 패널 근거 제시 완료")
+                    self.presenter.display_debug_line(f"🎯 [디버그] {panel.name} 패널 근거 제시 완료")
                 
                 if not panel.is_human:
-                    time.sleep(2)
+                    self._sleep(2)
         
         else:
             # individual 또는 기타: 첫 번째 지목된 패널만 근거 제시
             panel = targeted_panels[0]
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] 개별 근거 제시 모드로 진행 - {panel.name} 패널 단독 근거 제시")
+                self.presenter.display_debug_line(f"🎯 [디버그] 개별 근거 제시 모드로 진행 - {panel.name} 패널 단독 근거 제시")
             
             context = f"근거 제시 요청"
             statements = [stmt['content'] for stmt in self.all_statements]
@@ -930,14 +941,14 @@ class DebateOrchestrator:
             })
             
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🎯 [디버그] {panel.name} 패널 근거 제시 완료")
+                self.presenter.display_debug_line(f"🎯 [디버그] {panel.name} 패널 근거 제시 완료")
             
             if not panel.is_human:
-                time.sleep(2)
+                self._sleep(2)
             
             # 라운드 완료 - 개별 근거 제시는 바로 종료 (다른 패널 자동 호출 제거)
             if self.config['debate'].get('show_debug_info', False):
-                print(f"🏁 [디버그] 개별 근거 제시 완료 - {panel.name} 패널만 응답하고 라운드 종료")
+                self.presenter.display_debug_line(f"🏁 [디버그] 개별 근거 제시 완료 - {panel.name} 패널만 응답하고 라운드 종료")
         
         return True  # 지목된 패널들이 응답했으므로 라운드 완료
     
@@ -976,7 +987,7 @@ class DebateOrchestrator:
             
             # 사용자가 아닌 경우만 대기
             if not agent.is_human:
-                time.sleep(2)
+                self._sleep(2)
     
     def _conduct_discussion_stage(self, panel_agents: List) -> None:
         """2단계: 상호 토론"""
@@ -1024,10 +1035,11 @@ class DebateOrchestrator:
                 
                 # 사용자가 아닌 경우만 대기
                 if not agent.is_human:
-                    time.sleep(2)
+                    self._sleep(2)
     
     def conclude_debate(self, topic: str, panel_agents: List, system_prompt: str) -> None:
         """토론 마무리"""
+        self._maybe_rebind_mocks()
         self.presenter.display_debate_conclusion_header()
         
         # 매니저의 마무리 시작 발언
@@ -1071,7 +1083,7 @@ class DebateOrchestrator:
             
             # 사용자가 아닌 경우만 대기
             if not agent.is_human:
-                time.sleep(2)
+                self._sleep(2)
         
         # 최종 결론
         self.presenter.display_debate_conclusion_final_header()
@@ -1094,7 +1106,7 @@ class DebateOrchestrator:
         # 랜덤한 위치에 사용자 삽입 (첫 번째나 마지막이 아닌 중간 위치)
         if len(panel_agents) > 1:
             # 1번째와 마지막 사이의 랜덤 위치
-            insert_position = random.randint(1, len(panel_agents))
+            insert_position = random.randint(1, len(panel_agents) - 1)
         else:
             # 패널이 1명이면 마지막에 추가
             insert_position = len(panel_agents)
@@ -1103,3 +1115,51 @@ class DebateOrchestrator:
         self.logger.info(f"사용자 '{user_name}'을 {insert_position + 1}번째 패널로 추가")
         
         return panel_agents
+
+    # ========= 내부 유틸리티 =========
+    def _validate_analysis(self, analysis: Dict[str, Any], panel_agents: List) -> Dict[str, Any]:
+        """LLM 분석 결과의 유효성/일관성을 보정"""
+        out: Dict[str, Any] = dict(analysis or {})
+        valid_actions = {
+            "provoke_debate",
+            "focus_clash",
+            "change_angle",
+            "pressure_evidence",
+            "continue_normal",
+        }
+        # next_action 보정
+        next_action = out.get("next_action")
+        out["next_action"] = next_action if next_action in valid_actions else "continue_normal"
+
+        # temperature 보정 및 매핑
+        temp_map = {
+            "balanced": "neutral",
+            "normal": "neutral",
+        }
+        temperature = out.get("temperature")
+        if temperature in temp_map:
+            temperature = temp_map[temperature]
+        valid_temps = {"cold", "stuck", "neutral", "heated"}
+        out["temperature"] = temperature if temperature in valid_temps else "neutral"
+
+        # targeted_panels 정합성
+        names = {getattr(a, 'name', None) for a in panel_agents}
+        filtered = [p for p in out.get("targeted_panels", []) if p in names]
+        out["targeted_panels"] = filtered
+        return out
+
+    def _temperature_leq_threshold(self, temperature: str, threshold: str) -> bool:
+        """온도 비교: temperature가 threshold보다 '차갑거나 같은지' 여부"""
+        order = ["cold", "stuck", "neutral", "heated"]
+        # 보정 매핑
+        temp_map = {
+            "balanced": "neutral",
+            "normal": "neutral",
+        }
+        t = temp_map.get(temperature, temperature)
+        th = temp_map.get(threshold, threshold)
+        try:
+            return order.index(t) <= order.index(th)
+        except ValueError:
+            # 알 수 없는 값은 보수적으로 중립으로 간주
+            return order.index("neutral") <= order.index(th)

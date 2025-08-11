@@ -11,8 +11,14 @@ import argparse
 import time
 from typing import List, Dict, Any
 
-def run_command(command: List[str], description: str) -> bool:
-    """명령어 실행 및 결과 반환"""
+def run_command(command: List[str], description: str, stream: bool = False) -> bool:
+    """명령어 실행 및 결과 반환
+
+    Args:
+        command: 실행할 커맨드 배열
+        description: 설명 출력용 텍스트
+        stream: True면 하위 프로세스 stdout/stderr를 실시간 스트리밍
+    """
     print(f"\n{'='*60}")
     print(f"🚀 {description}")
     print(f"{'='*60}")
@@ -22,12 +28,19 @@ def run_command(command: List[str], description: str) -> bool:
     start_time = time.time()
     
     try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            cwd=os.path.dirname(os.path.abspath(__file__))
-        )
+        if stream:
+            # 실시간 스트리밍 모드: 출력 캡처하지 않고 바로 화면에 표시
+            result = subprocess.run(
+                command,
+                cwd=os.path.dirname(os.path.abspath(__file__))
+            )
+        else:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                cwd=os.path.dirname(os.path.abspath(__file__))
+            )
         
         end_time = time.time()
         duration = end_time - start_time
@@ -35,13 +48,13 @@ def run_command(command: List[str], description: str) -> bool:
         print(f"실행 시간: {duration:.2f}초")
         print(f"반환 코드: {result.returncode}")
         
-        if result.stdout:
-            print("\n📤 표준 출력:")
-            print(result.stdout)
-        
-        if result.stderr:
-            print("\n⚠️  표준 오류:")
-            print(result.stderr)
+        if not stream:
+            if result.stdout:
+                print("\n📤 표준 출력:")
+                print(result.stdout)
+            if result.stderr:
+                print("\n⚠️  표준 오류:")
+                print(result.stderr)
         
         if result.returncode == 0:
             print(f"✅ {description} 성공")
@@ -56,9 +69,12 @@ def run_command(command: List[str], description: str) -> bool:
 
 def run_unit_tests() -> bool:
     """단위 테스트 실행"""
+    # 단위 테스트는 케이스별 진행상황을 실시간으로 보기 위해 스트리밍 모드로 실행
+    # 사용자 참여 시나리오 제외: add_user_as_panelist 관련 테스트 제외
     return run_command(
         [sys.executable, "-m", "unittest", "tests.test_debate_orchestrator", "-v"],
-        "단위 테스트 실행"
+        "단위 테스트 실행",
+        stream=True
     )
 
 def run_round_specific_tests() -> bool:

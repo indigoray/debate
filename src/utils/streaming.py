@@ -4,13 +4,16 @@
 
 import sys
 import time
-import openai
-from typing import Iterator, Optional, List
+try:
+    import openai  # noqa: F401
+except Exception:  # pragma: no cover - 테스트 환경에서 openai 미설치 허용
+    openai = None  # type: ignore
+from typing import Iterator, Optional, List, Any
 from colorama import Fore, Style
 
 
 def stream_openai_response(
-    client: openai.OpenAI,
+    client: Any,
     model: str,
     messages: list,
     max_tokens: int,

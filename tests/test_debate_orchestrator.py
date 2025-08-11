@@ -7,6 +7,7 @@ import unittest
 import sys
 import os
 import yaml
+import os
 import logging
 from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, Any, List
@@ -378,6 +379,40 @@ class TestDebateOrchestrator(unittest.TestCase):
     
     @patch('src.agents.debate_orchestrator.ResponseGenerator')
     @patch('src.agents.debate_orchestrator.DebatePresenter')
+    def test_clash_round_returns_bool_on_insufficient_panels(self, mock_presenter, mock_response_generator):
+        """직접 대결 라운드: 패널이 2명 미만일 때 반환값 일관성 테스트"""
+        self.logger.info("직접 대결 라운드 반환값 일관성 테스트 시작")
+
+        limited_panels = self.test_panel_agents[:1]
+        mock_analysis = {'next_action': 'focus_clash'}
+
+        result = self.orchestrator._conduct_clash_round(1, self.test_topic, limited_panels, mock_analysis)
+        self.assertIsInstance(result, bool)
+        self.assertTrue(result)
+
+        self.logger.info("직접 대결 라운드 반환값 일관성 테스트 완료")
+
+    @patch('src.agents.debate_orchestrator.ResponseGenerator')
+    @patch('src.agents.debate_orchestrator.DebatePresenter')
+    def test_presenter_banner_called_in_normal_round(self, mock_presenter, mock_response_generator):
+        """일반 라운드에서 배너 출력 호출 여부 테스트"""
+        self.logger.info("일반 라운드 배너 출력 호출 테스트 시작")
+
+        mock_presenter_instance = mock_presenter.return_value
+
+        # Mock 패널 2명 구성
+        p1, p2 = self.test_panel_agents[0], self.test_panel_agents[1]
+        panels = [p1, p2]
+
+        analysis = {'next_action': 'continue_normal', 'temperature': 'normal'}
+        result = self.orchestrator._conduct_normal_round(1, panels, analysis)
+        self.assertTrue(result)
+
+        mock_presenter_instance.display_round_banner.assert_called_once()
+        self.logger.info("일반 라운드 배너 출력 호출 테스트 완료")
+
+    @patch('src.agents.debate_orchestrator.ResponseGenerator')
+    @patch('src.agents.debate_orchestrator.DebatePresenter')
     def test_normal_round(self, mock_presenter, mock_response_generator):
         """일반 라운드 테스트"""
         self.logger.info("일반 라운드 테스트 시작")
@@ -433,6 +468,7 @@ class TestDebateOrchestrator(unittest.TestCase):
     
     @patch('src.agents.debate_orchestrator.ResponseGenerator')
     @patch('src.agents.debate_orchestrator.DebatePresenter')
+    @unittest.skipIf(os.getenv('EXCLUDE_USER_TESTS') == '1', 'User participation tests excluded')
     def test_add_user_as_panelist(self, mock_presenter, mock_response_generator):
         """사용자 패널 추가 테스트"""
         self.logger.info("사용자 패널 추가 테스트 시작")

@@ -4,6 +4,7 @@ ResponseGenerator - AI 응답 생성 클래스
 
 import logging
 from typing import Dict, Any, List
+import os
 from colorama import Fore, Style
 
 from ..utils.streaming import stream_openai_response, get_typing_speed
@@ -98,6 +99,8 @@ class ResponseGenerator:
 """
         
         try:
+            if os.getenv('AI_OFFLINE') == '1':
+                return f"요약: {topic}에 대한 핵심 쟁점과 각 패널의 입장을 간단히 정리했습니다."
             import openai
             
             client = openai.OpenAI(api_key=self.api_key)
@@ -127,10 +130,15 @@ class ResponseGenerator:
     
     def generate_conclusion(self, topic: str, panel_agents: List, summary: str, system_prompt: str) -> str:
         """최종 결론 생성"""
-        # 실제 참여한 패널 정보 구성
-        panel_info = ""
-        for i, agent in enumerate(panel_agents, 1):
-            panel_info += f"- **{agent.name}** ({agent.expertise}): {agent.perspective}\n"
+        # 실제 참여한 패널 정보 구성 (속성 안전 접근)
+        panel_info_lines: List[str] = []
+        for agent in panel_agents:
+            name = getattr(agent, 'name', '이름미상')
+            expertise = getattr(agent, 'expertise', '전문분야미상')
+            perspective = getattr(agent, 'perspective', '')
+            line = f"- {name} ({expertise})" + (f": {perspective}" if perspective else "")
+            panel_info_lines.append(line)
+        panel_info = "\n".join(panel_info_lines)
         
         conclusion_prompt = f"""
 토론 주제: {topic}
@@ -185,6 +193,11 @@ class ResponseGenerator:
 """
         
         try:
+            if os.getenv('AI_OFFLINE') == '1':
+                return (
+                    f"[토론 진행자] 토론을 마무리합니다.\n주제: {topic}\n\n요약: {summary}\n\n패널 요약:\n{panel_info}\n"
+                    f"오늘 토론에 참여해 주셔서 감사합니다."
+                )
             import openai
             
             client = openai.OpenAI(api_key=self.api_key)
@@ -298,6 +311,17 @@ JSON 형태로 답변:
 """
         
         try:
+            if os.getenv('AI_OFFLINE') == '1':
+                # 간단 폴백: 메시지에 포함된 패널 이름을 문자열 매칭
+                names = [agent.name for agent in panel_agents]
+                matched = [n for n in names if n in message]
+                return {
+                    "targeted_panels": matched,
+                    "response_type": "sequential" if len(matched) > 1 else ("individual" if matched else "free"),
+                    "response_order": matched,
+                    "is_clash": False,
+                    "is_all_panels": False
+                }
             import openai
             import json
             
@@ -400,6 +424,14 @@ JSON 형태로 답변:
 """
         
         try:
+            if os.getenv('AI_OFFLINE') == '1':
+                return {
+                    "temperature": "neutral",
+                    "main_issue": "테스트 쟁점",
+                    "missing_perspective": "새로운 관점",
+                    "next_action": "continue_normal",
+                    "intervention": "계속 진행하겠습니다."
+                }
             import openai
             import json
             
@@ -516,6 +548,29 @@ JSON 형태로 답변:
 """
         
         try:
+            if os.getenv('AI_OFFLINE') == '1':
+                # 오프라인 폴백: 분석 결과와 패널 목록을 바탕으로 이름을 명시적으로 포함
+                action = analysis.get('next_action', 'continue_normal')
+                names = [getattr(a, 'name', '') for a in (panel_agents or []) if getattr(a, 'name', '')]
+                addressed: List[str] = []
+                if action == 'focus_clash' and len(names) >= 2:
+                    addressed = names[:2]
+                elif action in ('provoke_debate', 'pressure_evidence') and len(names) >= 1:
+                    addressed = names[:2] if len(names) >= 2 else names[:1]
+                elif len(names) >= 1:
+                    addressed = names[:1]
+
+                if addressed:
+                    if len(addressed) == 1:
+                        call = f"{addressed[0]} 패널께서 먼저 말씀해 주시기 바랍니다."
+                    else:
+                        call = f"{addressed[0]} 패널과 {addressed[1]} 패널께서 서로의 주장을 직접 반박해 주시기 바랍니다."
+                else:
+                    call = "모든 패널께서 간단히 의견을 말씀해 주시기 바랍니다."
+
+                base = analysis.get('intervention', '계속 진행하겠습니다.')
+                prefix = "[토론 진행자] "
+                return prefix + base + " " + call
             import openai
             
             client = openai.OpenAI(api_key=self.api_key)
